@@ -1,0 +1,72 @@
+name: Build and Deploy Android
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout master branch
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run Code Generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (Release)
+        run: flutter build apk --release
+
+      - name: Push Build Artifacts to android branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create a temporary folder for artifacts (using a path outside the repo to be safe)
+          mkdir ../temp_artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk ../temp_artifacts/off-chat-release.apk
+          cp build/app/outputs/bundle/release/app-release.aab ../temp_artifacts/off-chat-release.aab
+          
+          # Discard all local changes (including generated files) to avoid checkout conflicts
+          git reset --hard
+          git clean -fd
+          
+          # Fetch all branches
+          git fetch origin
+          
+          # Switch to (or create) the android branch
+          if git show-ref --verify --quiet refs/remotes/origin/android; then
+            git checkout -f android --
+            git reset --hard origin/android
+          else
+            git checkout --orphan android
+            git rm -rf .
+          fi
+          
+          # Move artifacts from temp folder to root
+          mv ../temp_artifacts/* .
+          
+          # Add and commit
+          git add off-chat-release.apk off-chat-release.aab
+          git commit -m "Automated Android Build: $(date)"
+          
+          # Force push to the android branch
+          git push -f origin android
