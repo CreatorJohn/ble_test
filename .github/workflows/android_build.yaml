@@ -43,7 +43,6 @@ jobs:
           # Create a temporary folder for artifacts (using a path outside the repo to be safe)
           mkdir ../temp_artifacts
           cp build/app/outputs/flutter-apk/app-release.apk ../temp_artifacts/off-chat-release.apk
-          cp build/app/outputs/bundle/release/app-release.aab ../temp_artifacts/off-chat-release.aab
           
           # Discard all local changes (including generated files) to avoid checkout conflicts
           git reset --hard
