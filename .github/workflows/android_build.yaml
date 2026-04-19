@@ -27,9 +27,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Run Code Generation
-        run: dart run build_runner build --delete-conflicting-outputs
-
       - name: Build APK (Release)
         run: flutter build apk --release
 
@@ -42,7 +39,7 @@ jobs:
           
           # Create a temporary folder for artifacts (using a path outside the repo to be safe)
           mkdir ../temp_artifacts
-          cp build/app/outputs/flutter-apk/app-release.apk ../temp_artifacts/off-chat-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk ../temp_artifacts/ble-test-release.apk
           
           # Discard all local changes (including generated files) to avoid checkout conflicts
           git reset --hard
@@ -64,7 +61,7 @@ jobs:
           mv ../temp_artifacts/* .
           
           # Add and commit
-          git add off-chat-release.apk off-chat-release.aab
+          git add ble-test-release.apk
           git commit -m "Automated Android Build: $(date)"
           
           # Force push to the android branch
