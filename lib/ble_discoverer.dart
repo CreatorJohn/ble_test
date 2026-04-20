@@ -48,7 +48,6 @@ class BleDiscoverer {
     }
 
     final permissions = await [
-      Permission.bluetooth,
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
     ].request();

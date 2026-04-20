@@ -23,10 +23,8 @@ class BLEAdvertiser {
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
     final permissions = await [
-      Permission.bluetooth,
       Permission.bluetoothAdvertise,
       Permission.bluetoothConnect,
-      Permission.location,
     ].request();
 
     bool failed = false;
