@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
 

@@ -13,7 +13,7 @@ class WatchLog {
   static final Logger _log = Logger('WatchLog');
   static final WatchLog _instance = WatchLog._internal();
   static final List<LogRecord> _logBuffer = [];
-  static StreamController<LogRecord> _logStream = StreamController.broadcast();
+  static final StreamController<LogRecord> _logStream = StreamController.broadcast();
 
   factory WatchLog() => _instance;
 
