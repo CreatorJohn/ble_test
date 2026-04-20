@@ -20,12 +20,15 @@ class BLEAdvertiser {
   BLEAdvertiser._internal();
 
   Future<bool> _waitForBluetooth() async {
+    _log.info("Checking the bluetooth...");
+
     switch (FlutterBluePlus.adapterStateNow) {
       case BluetoothAdapterState.turningOff:
       case BluetoothAdapterState.off:
       case BluetoothAdapterState.unauthorized:
       case BluetoothAdapterState.unavailable:
       case BluetoothAdapterState.unknown:
+        _log.severe("Bluetooth failed to turn on");
         return false;
       default:
     }
@@ -51,6 +54,7 @@ class BLEAdvertiser {
 
   Future<bool> initialize() async {
     if (_initialized) return true;
+    _initialized = true;
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
     final permissions = await [
@@ -68,14 +72,17 @@ class BLEAdvertiser {
 
     if (failed) {
       _log.severe('Required permissions not granted');
+      _initialized = false;
       return false;
     }
 
     final bluetoothOn = await _waitForBluetooth();
 
-    if (!bluetoothOn) return false;
+    if (!bluetoothOn) {
+      _initialized = false;
+      return false;
+    }
 
-    _initialized = true;
     _log.fine('All required permissions granted and bluetooth running');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
