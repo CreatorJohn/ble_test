@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart' hide CharacteristicProperties;
+import 'package:flutter_blue_plus/flutter_blue_plus.dart'
+    hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
 
@@ -17,6 +18,37 @@ class BLEAdvertiser {
   factory BLEAdvertiser() => _instance;
 
   BLEAdvertiser._internal();
+
+  Future<bool> _waitForBluetooth() async {
+    switch (FlutterBluePlus.adapterStateNow) {
+      case BluetoothAdapterState.turningOff:
+      case BluetoothAdapterState.off:
+      case BluetoothAdapterState.unauthorized:
+      case BluetoothAdapterState.unavailable:
+      case BluetoothAdapterState.unknown:
+        return false;
+      default:
+    }
+    ;
+
+    bool isBluetoothOn() =>
+        FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on;
+
+    // Check if Bluetooth is ON and wait for it
+    if (isBluetoothOn()) {
+      _log.fine("Bluetooth is turned on");
+    } else {
+      // Waiting for Bluetooth to turn on
+      await Future.doWhile(() async {
+        _log.warning("Bluetooth is turning on...");
+        await Future.delayed(const Duration(seconds: 1));
+
+        return isBluetoothOn();
+      });
+    }
+
+    return true;
+  }
 
   Future<bool> initialize() async {
     if (_initialized) return true;
@@ -40,35 +72,12 @@ class BLEAdvertiser {
       return false;
     }
 
-    // Check if Bluetooth is ON
-    if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
-      _log.warning('Bluetooth is OFF. Please turn it ON.');
-      try {
-        await FlutterBluePlus.turnOn();
-        // Wait for state change
-        await Future.delayed(const Duration(seconds: 1));
-      } catch (e) {
-        _log.severe('Could not turn on Bluetooth automatically: $e');
-      }
-    }
+    final bluetoothOn = await _waitForBluetooth();
 
-    try {
-      final isSupported = await BlePeripheral.isSupported();
-      _log.info('BlePeripheral.isSupported() returned: $isSupported');
-
-      if (isSupported != true) {
-        _log.severe('BLE Peripheral mode is not supported on this device');
-        return false;
-      }
-
-      _log.fine("BLE Peripheral mode is supported on this device");
-    } catch (e) {
-      _log.severe('Error occurred while checking BLE support: $e');
-      return false;
-    }
+    if (!bluetoothOn) return false;
 
     _initialized = true;
-    _log.fine('All required permissions granted and support verified');
+    _log.fine('All required permissions granted and bluetooth running');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
       _log.info('Advertising status updated: isAdvertising=$isAdvertising');
@@ -93,6 +102,10 @@ class BLEAdvertiser {
         bool success = await initialize();
         if (!success) return;
       }
+
+      final bluetoothOn = await _waitForBluetooth();
+
+      if (!bluetoothOn) return;
 
       if (await BlePeripheral.isAdvertising() == true) {
         _log.warning('Already advertising, stopping first');
