@@ -22,34 +22,37 @@ class BLEAdvertiser {
   Future<bool> _waitForBluetooth() async {
     _log.info("Checking the bluetooth...");
 
-    switch (FlutterBluePlus.adapterStateNow) {
-      case BluetoothAdapterState.turningOff:
-      case BluetoothAdapterState.off:
-      case BluetoothAdapterState.unauthorized:
-      case BluetoothAdapterState.unavailable:
-      case BluetoothAdapterState.unknown:
-        _log.severe("Bluetooth failed to turn on");
-        return false;
-      default:
+    // Wait for first valid state
+    BluetoothAdapterState state = await FlutterBluePlus.adapterState
+        .firstWhere((s) => s != BluetoothAdapterState.unknown)
+        .timeout(const Duration(seconds: 2), onTimeout: () => BluetoothAdapterState.unknown);
+
+    if (state == BluetoothAdapterState.on) {
+      _log.fine("Bluetooth is already ON");
+      return true;
     }
 
-    bool isBluetoothOn() =>
-        FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on;
-
-    // Check if Bluetooth is ON and wait for it
-    if (isBluetoothOn()) {
-      _log.fine("Bluetooth is turned on");
-    } else {
-      // Waiting for Bluetooth to turn on
-      await Future.doWhile(() async {
-        _log.warning("Bluetooth is turning on...");
-        await Future.delayed(const Duration(seconds: 1));
-
-        return isBluetoothOn();
-      });
+    if (state == BluetoothAdapterState.off) {
+      _log.info("Bluetooth is OFF, trying to turn it ON...");
+      try {
+        await FlutterBluePlus.turnOn();
+      } catch (e) {
+        _log.warning("Could not turn on Bluetooth automatically: $e");
+      }
     }
 
-    return true;
+    // Wait for ON state
+    try {
+      await FlutterBluePlus.adapterState
+          .where((s) => s == BluetoothAdapterState.on)
+          .first
+          .timeout(const Duration(seconds: 5));
+      _log.fine("Bluetooth is now ON");
+      return true;
+    } catch (_) {
+      _log.severe("Bluetooth failed to turn on or remains in state: ${FlutterBluePlus.adapterStateNow}");
+      return false;
+    }
   }
 
   Future<bool> initialize() async {
@@ -58,6 +61,7 @@ class BLEAdvertiser {
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
     final permissions = await [
+      Permission.bluetoothScan,
       Permission.bluetoothAdvertise,
       Permission.bluetoothConnect,
     ].request();
