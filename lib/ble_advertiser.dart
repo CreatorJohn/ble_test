@@ -29,7 +29,6 @@ class BLEAdvertiser {
         return false;
       default:
     }
-    ;
 
     bool isBluetoothOn() =>
         FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on;

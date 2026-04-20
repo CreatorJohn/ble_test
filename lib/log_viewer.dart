@@ -28,7 +28,7 @@ class _LogViewerState extends State<LogViewer> {
 
   Color _getColor(Level level) {
     if (level == Level.INFO) return Colors.green;
-    if (level == Level.WARNING) return Colors.yellow;
+    if (level == Level.WARNING) return Colors.black;
     if (level == Level.SEVERE) return Colors.red;
     if (level == Level.FINE || level == Level.FINER || level == Level.FINEST) {
       return Colors.blue;
