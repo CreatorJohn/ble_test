@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
 
@@ -19,52 +20,57 @@ class BLEAdvertiser {
 
   Future<bool> initialize() async {
     if (_initialized) return true;
-    _initialized = true;
-    // Check whether permissions are granted using permissions_handler or similar package
-    // If not granted, request permissions and return BLEAdvertiserError.permissionsDenied if not granted
+
+    _log.info('Initializing BLEAdvertiser: Requesting permissions first');
+    final permissions = await [
+      Permission.bluetooth,
+      Permission.bluetoothAdvertise,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    bool failed = false;
+    for (final permission in permissions.entries) {
+      if (permission.value.isDenied || permission.value.isPermanentlyDenied) {
+        _log.warning('Permission ${permission.key} denied/permanently denied');
+        failed = true;
+      }
+    }
+
+    if (failed) {
+      _log.severe('Required permissions not granted');
+      return false;
+    }
+
+    // Check if Bluetooth is ON
+    if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+      _log.warning('Bluetooth is OFF. Please turn it ON.');
+      try {
+        await FlutterBluePlus.turnOn();
+        // Wait for state change
+        await Future.delayed(const Duration(seconds: 1));
+      } catch (e) {
+        _log.severe('Could not turn on Bluetooth automatically: $e');
+      }
+    }
 
     try {
-      final isSupported = await BlePeripheral.isSupported() == true;
+      final isSupported = await BlePeripheral.isSupported();
+      _log.info('BlePeripheral.isSupported() returned: $isSupported');
 
-      if (!isSupported) {
+      if (isSupported != true) {
         _log.severe('BLE Peripheral mode is not supported on this device');
-        _initialized = false;
         return false;
       }
 
       _log.fine("BLE Peripheral mode is supported on this device");
     } catch (e) {
       _log.severe('Error occurred while checking BLE support: $e');
-      _initialized = false;
       return false;
     }
 
-    final permissions = await [
-      Permission.bluetooth,
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-    ].request();
-
-    bool failed = false;
-
-    for (final permission in permissions.entries) {
-      if (permission.value.isDenied) {
-        _log.warning('Permission ${permission.key} denied');
-        failed = true;
-      } else if (permission.value.isPermanentlyDenied) {
-        _log.warning('Permission ${permission.key} permanently denied');
-        failed = true;
-      } else {
-        _log.info('Permission ${permission.key} granted');
-      }
-    }
-
-    if (failed) {
-      _initialized = false;
-      return false;
-    }
-
-    _log.fine('All required permissions granted');
+    _initialized = true;
+    _log.fine('All required permissions granted and support verified');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
       _log.info('Advertising status updated: isAdvertising=$isAdvertising');
@@ -84,11 +90,10 @@ class BLEAdvertiser {
 
   Future<void> startAdvertising({required String localName}) async {
     try {
-      print("Is BLEAdvertiser initialized? $_initialized");
       if (_initialized == false) {
         _log.warning('BLEAdvertiser not initialized, initializing now');
-
-        return;
+        bool success = await initialize();
+        if (!success) return;
       }
 
       if (await BlePeripheral.isAdvertising() == true) {
