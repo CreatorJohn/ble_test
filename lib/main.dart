@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:ble_test/advertise_widget.dart';
 import 'package:ble_test/ble_advertiser.dart';
+import 'package:ble_test/ble_discoverer.dart';
+import 'package:ble_test/discovery_widget.dart';
+import 'package:ble_test/log_viewer.dart';
+import 'package:ble_test/status_indicator.dart';
 import 'package:ble_test/watch_log.dart';
 import 'package:flutter/material.dart';
-import 'package:logging/logging.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +27,8 @@ class MainApp extends StatelessWidget {
   }
 }
 
+enum AppMode { advertising, discovery, unknown }
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -31,109 +38,134 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final BLEAdvertiser _bleAdvertiser = BLEAdvertiser();
-  bool? _advertising;
+  final BleDiscoverer _bleDiscoverer = BleDiscoverer();
+  late final StreamSubscription<bool> _advertisingStatusSubscription;
+  late final StreamSubscription<bool> _discoveringStatusSubscription;
+  late Stream<List<DiscoveredDevice>> _discoveredStream;
+  late List<DiscoveredDevice> _initialDiscovered;
+  AppMode _mode = AppMode.unknown;
+  bool _advertising = false;
+  bool _discovering = false;
+
+  void _updateDiscoveryState([
+    Stream<List<DiscoveredDevice>>? stream,
+    List<DiscoveredDevice>? initial,
+  ]) {
+    _discoveredStream = stream ?? _bleDiscoverer.resultsStream;
+    _initialDiscovered = initial ?? _bleDiscoverer.prevResults;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _updateDiscoveryState();
+
+    _advertisingStatusSubscription = _bleAdvertiser.advertisingStatusStream
+        .listen(
+          (isAdvertising) => setState(() => _advertising = isAdvertising),
+        );
+
+    _discoveringStatusSubscription = _bleDiscoverer.isDiscoveringStream.listen(
+      (isDiscovering) => setState(() => _discovering = isDiscovering),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('BLE Test')),
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('BLE Test'),
+        leading: StatusIndicator(
+          isActive: switch (_mode) {
+            AppMode.advertising => _advertising,
+            AppMode.discovery => _discovering,
+            AppMode.unknown => null,
+          },
+          icon: switch (_mode) {
+            AppMode.advertising => Icons.broadcast_on_personal,
+            AppMode.discovery => Icons.bluetooth_searching,
+            AppMode.unknown => Icons.question_mark,
+          },
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 8.0),
+        actions: [
+          if (_mode == AppMode.discovery && !_discovering)
+            IconButton(
+              onPressed: () => _bleDiscoverer.discover(
+                freshCb: (stream, initial) {
+                  setState(() => _updateDiscoveryState(stream, initial));
+                },
+              ),
+              icon: const Icon(Icons.refresh),
+            )
+          else if (_mode == AppMode.discovery)
+            IconButton(
+              onPressed: () => _bleDiscoverer.stopDiscovering(),
+              icon: const Icon(Icons.stop, color: Colors.red),
+            ),
+          IconButton(
+            onPressed: () =>
+                showDialog(context: context, builder: (context) => LogViewer()),
+            icon: const Icon(Icons.list),
+            tooltip: 'View logs',
+            style: IconButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           spacing: 16.0,
           children: [
-            Text(
-              'BLE Advertising is ${_advertising == null ? 'checking...' : (_advertising! ? 'ON' : 'OFF')}',
-              style: const TextStyle(fontSize: 18),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                await _bleAdvertiser.initialize();
-
-                if (!context.mounted) return;
-
-                setState(() => _advertising = false);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('BLE Advertising initialized')),
-                );
-              },
-              child: const Text('Advertise'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => LayoutBuilder(
-                    builder: (context, constrains) {
-                      return AlertDialog(
-                        constraints: BoxConstraints(
-                          maxWidth: constrains.maxWidth * 0.9,
-                          maxHeight: constrains.maxHeight * 0.9,
-                        ),
-                        insetPadding: const EdgeInsets.all(4.0),
-                        title: Row(
-                          spacing: 4.0,
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Log Output',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              style: IconButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                ),
-                              ),
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              tooltip: 'Clear logs',
-                              onPressed: WatchLog.clearLogs,
-                            ),
-                            IconButton(
-                              style: IconButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                ),
-                              ),
-                              icon: const Icon(Icons.copy),
-                              tooltip: 'Copy logs',
-                              onPressed: WatchLog.copyLogsToClipboard,
-                            ),
-                            IconButton(
-                              style: IconButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                ),
-                              ),
-                              icon: const Icon(Icons.close),
-                              tooltip: 'Close',
-                              onPressed: Navigator.of(context).pop,
-                            ),
-                          ],
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8.0),
-                        ),
-                        content: SizedBox(
-                          width: double.maxFinite,
-                          height: double.maxFinite,
-                          child: const LogViewer(),
-                        ),
-                      );
-                    },
+            if (_mode == AppMode.advertising)
+              Text(
+                'BLE Advertising is ${_advertising ? 'ON' : 'OFF'}',
+                style: const TextStyle(fontSize: 18),
+              )
+            else if (_mode == AppMode.discovery)
+              Text(
+                'BLE Discovery is ${_discovering ? 'ON' : 'OFF'}',
+                style: const TextStyle(fontSize: 18),
+              )
+            else
+              const Text(
+                'Select a mode to start',
+                style: TextStyle(fontSize: 18),
+              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: 12.0,
+              children: [
+                ElevatedButton(
+                  onPressed: () => _handleAppMode(AppMode.advertising),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
                   ),
-                );
-              },
-              child: const Text('Show Logs'),
+                  child: const Text('BLE Advertiser'),
+                ),
+                ElevatedButton(
+                  onPressed: () => _handleAppMode(AppMode.discovery),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                  ),
+                  child: const Text('BLE Discovery'),
+                ),
+              ],
             ),
-            if (_advertising != null)
+            if (_mode == AppMode.advertising)
               AdvertiseWidget(
-                advertising: _advertising!,
+                advertising: _advertising,
                 onStart: (localName) async {
                   await _bleAdvertiser.startAdvertising(localName: localName);
                   setState(() => _advertising = true);
@@ -142,66 +174,37 @@ class _HomePageState extends State<HomePage> {
                   await _bleAdvertiser.stopAdvertising();
                   setState(() => _advertising = false);
                 },
+              )
+            else if (_mode == AppMode.discovery)
+              DiscoveryWidget(
+                resultsStream: _discoveredStream,
+                initialResults: _initialDiscovered,
               ),
           ],
         ),
       ),
     );
   }
-}
 
-class LogViewer extends StatefulWidget {
-  const LogViewer({super.key});
-
-  @override
-  State<LogViewer> createState() => _LogViewerState();
-}
-
-class _LogViewerState extends State<LogViewer> {
-  late final List<(String content, Level level)> logs;
-  late final LogListener _logListener;
-
-  @override
-  void initState() {
-    super.initState();
-    logs = WatchLog.logs.toList();
-    _logListener = (time, level, name, message) {
-      setState(() {
-        logs.add(('[$time] [$level] $name: $message', level));
-      });
-    };
-    WatchLog.addListener(_logListener);
-  }
-
-  Color _getColor(Level level) {
-    if (level == Level.INFO) return Colors.green;
-    if (level == Level.WARNING) return Colors.yellow;
-    if (level == Level.SEVERE) return Colors.red;
-    if (level == Level.FINE || level == Level.FINER || level == Level.FINEST) {
-      return Colors.blue;
+  Future<void> _handleAppMode(AppMode mode) async {
+    if (mode == _mode) {
+      setState(() => _mode = AppMode.unknown);
+      return;
     }
-    if (level == Level.CONFIG) return Colors.purple;
-    if (level == Level.SHOUT) return Colors.orange;
-    return Colors.black;
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: logs.length,
-      itemBuilder: (context, index) {
-        final log = logs[index];
-        return Text(
-          log.$1,
-          style: TextStyle(color: _getColor(log.$2), fontSize: 12),
-        );
-      },
-    );
+    setState(() => _mode = mode);
+
+    if (mode == AppMode.advertising) {
+      await _bleAdvertiser.initialize();
+    } else if (mode == AppMode.discovery) {
+      await _bleDiscoverer.initialize();
+    }
   }
 
   @override
   void dispose() {
-    WatchLog.removeListener(_logListener);
+    _advertisingStatusSubscription.cancel();
+    _discoveringStatusSubscription.cancel();
     super.dispose();
   }
 }

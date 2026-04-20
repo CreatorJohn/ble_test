@@ -28,7 +28,7 @@ class _AdvertiseWidgetState extends State<AdvertiseWidget> {
         return SizedBox(
           width: constrains.maxWidth * 0.9,
           child: Row(
-            spacing: 12.0,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: TextField(
@@ -38,21 +38,34 @@ class _AdvertiseWidgetState extends State<AdvertiseWidget> {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8.0),
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   maxLength: 11,
                   controller: _controller,
                 ),
               ),
+              const SizedBox(width: 12.0),
               if (!widget.advertising)
                 ElevatedButton(
                   onPressed: () => widget.onStart(_controller.text.trim()),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                  ),
                   child: const Text('Advertise'),
                 )
               else
                 ElevatedButton(
                   onPressed: widget.onStop,
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                  ),
                   child: const Text('Stop'),
                 ),
             ],
