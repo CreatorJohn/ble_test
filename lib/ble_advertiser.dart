@@ -114,16 +114,21 @@ class BLEAdvertiser {
       }
 
       final bluetoothOn = await _waitForBluetooth();
-
       if (!bluetoothOn) return;
 
-      if (await BlePeripheral.isAdvertising() == true) {
-        _log.warning('Already advertising, stopping first');
-        await stopAdvertising();
+      // Android 16/HyperOS safety: Reset the stack first
+      _log.info('Resetting BLE stack before starting...');
+      try {
+        await BlePeripheral.stopAdvertising();
+        await BlePeripheral.clearServices();
+      } catch (e) {
+        _log.fine('Clean reset ignored: $e');
       }
 
-      _log.info('Starting BLE advertising with local name: $localName');
+      // Crucial delay for Android 16 GATT stability
+      await Future.delayed(const Duration(seconds: 1));
 
+      _log.info('Adding BLE service...');
       await BlePeripheral.addService(
         BleService(
           uuid: serviceUuid,
@@ -139,12 +144,18 @@ class BLEAdvertiser {
         ),
       );
 
+      // Short breathing room after adding service
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      _log.info('Starting BLE advertising with local name: $localName');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
         localName: localName,
       );
     } catch (e) {
-      _log.severe(e);
+      _log.severe('Failed to start advertising: $e');
+      // Attempt to cleanup on failure
+      await BlePeripheral.stopAdvertising();
     }
   }
 
