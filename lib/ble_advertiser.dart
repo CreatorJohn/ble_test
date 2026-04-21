@@ -68,18 +68,24 @@ class BLEAdvertiser {
       Permission.bluetoothScan,
       Permission.bluetoothAdvertise,
       Permission.bluetoothConnect,
+      Permission.location,
+      Permission.locationWhenInUse,
     ].request();
 
     bool failed = false;
     for (final permission in permissions.entries) {
       if (permission.value.isDenied || permission.value.isPermanentlyDenied) {
         _log.warning('Permission ${permission.key} denied/permanently denied');
-        failed = true;
+        // On Android 16, location might be denied but BLE might still work if neverForLocation is set,
+        // but we'll log it as a warning. We only fail on the core BT permissions.
+        if (permission.key != Permission.location && permission.key != Permission.locationWhenInUse) {
+          failed = true;
+        }
       }
     }
 
     if (failed) {
-      _log.severe('Required permissions not granted');
+      _log.severe('Required core Bluetooth permissions not granted');
       _initialized = false;
       return false;
     }
@@ -90,6 +96,9 @@ class BLEAdvertiser {
       _initialized = false;
       return false;
     }
+
+    // Extra stabilization for Android 16
+    await Future.delayed(const Duration(seconds: 1));
 
     _log.fine('All required permissions granted and bluetooth running');
 
