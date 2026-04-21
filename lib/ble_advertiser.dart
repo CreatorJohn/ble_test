@@ -78,7 +78,8 @@ class BLEAdvertiser {
         _log.warning('Permission ${permission.key} denied/permanently denied');
         // On Android 16, location might be denied but BLE might still work if neverForLocation is set,
         // but we'll log it as a warning. We only fail on the core BT permissions.
-        if (permission.key != Permission.location && permission.key != Permission.locationWhenInUse) {
+        if (permission.key != Permission.location &&
+            permission.key != Permission.locationWhenInUse) {
           failed = true;
         }
       }
@@ -88,6 +89,14 @@ class BLEAdvertiser {
       _log.severe('Required core Bluetooth permissions not granted');
       _initialized = false;
       return false;
+    }
+
+    // Crucial: Initialize BlePeripheral AFTER permissions are granted
+    try {
+      _log.info('Calling BlePeripheral.initialize()...');
+      await BlePeripheral.initialize();
+    } catch (e) {
+      _log.severe('BlePeripheral.initialize() failed: $e');
     }
 
     final bluetoothOn = await _waitForBluetooth();
