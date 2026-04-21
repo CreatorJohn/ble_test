@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'
@@ -25,7 +24,10 @@ class BLEAdvertiser {
     // Wait for first valid state
     BluetoothAdapterState state = await FlutterBluePlus.adapterState
         .firstWhere((s) => s != BluetoothAdapterState.unknown)
-        .timeout(const Duration(seconds: 2), onTimeout: () => BluetoothAdapterState.unknown);
+        .timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => BluetoothAdapterState.unknown,
+        );
 
     if (state == BluetoothAdapterState.on) {
       _log.fine("Bluetooth is already ON");
@@ -50,7 +52,9 @@ class BLEAdvertiser {
       _log.fine("Bluetooth is now ON");
       return true;
     } catch (_) {
-      _log.severe("Bluetooth failed to turn on or remains in state: ${FlutterBluePlus.adapterStateNow}");
+      _log.severe(
+        "Bluetooth failed to turn on or remains in state: ${FlutterBluePlus.adapterStateNow}",
+      );
       return false;
     }
   }
@@ -125,6 +129,7 @@ class BLEAdvertiser {
         _log.fine('Clean reset ignored: $e');
       }
 
+      /*
       // Crucial delay for Android 16 GATT stability
       await Future.delayed(const Duration(seconds: 1));
 
@@ -143,6 +148,7 @@ class BLEAdvertiser {
           ],
         ),
       );
+      */
 
       // Short breathing room after adding service
       await Future.delayed(const Duration(milliseconds: 500));
