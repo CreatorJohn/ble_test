@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'
@@ -12,6 +13,7 @@ class BLEAdvertiser {
   static final StreamController<bool> _advertisingStatusController =
       StreamController.broadcast();
   static final serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
+  static bool _isAdvertising = false;
   static bool _initialized = false;
 
   factory BLEAdvertiser() => _instance;
@@ -64,60 +66,71 @@ class BLEAdvertiser {
     _initialized = true;
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
-    final permissions = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.location,
-      Permission.locationWhenInUse,
-    ].request();
+    if (Platform.isAndroid || Platform.isIOS) {
+      final permissions = await [
+        Permission.bluetoothScan,
+        Permission.bluetoothAdvertise,
+        Permission.bluetoothConnect,
+        Permission.location,
+        Permission.locationWhenInUse,
+      ].request();
 
-    bool failed = false;
-    for (final permission in permissions.entries) {
-      if (permission.value.isDenied || permission.value.isPermanentlyDenied) {
-        _log.warning('Permission ${permission.key} denied/permanently denied');
-        // On Android 16, location might be denied but BLE might still work if neverForLocation is set,
-        // but we'll log it as a warning. We only fail on the core BT permissions.
-        if (permission.key != Permission.location &&
-            permission.key != Permission.locationWhenInUse) {
-          failed = true;
+      bool failed = false;
+      for (final permission in permissions.entries) {
+        if (permission.value.isDenied || permission.value.isPermanentlyDenied) {
+          _log.warning(
+            'Permission ${permission.key} denied/permanently denied',
+          );
+          // On Android 16, location might be denied but BLE might still work if neverForLocation is set,
+          // but we'll log it as a warning. We only fail on the core BT permissions.
+          if (permission.key != Permission.location &&
+              permission.key != Permission.locationWhenInUse) {
+            failed = true;
+          }
         }
       }
-    }
 
-    if (failed) {
-      _log.severe('Required core Bluetooth permissions not granted');
-      _initialized = false;
-      return false;
+      if (failed) {
+        _log.severe('Required core Bluetooth permissions not granted');
+        _initialized = false;
+        return false;
+      }
+    } else {
+      _log.info('Skipping runtime permissions on non-mobile platform');
     }
 
     // Crucial: Initialize BlePeripheral AFTER permissions are granted
     try {
-      _log.info('Calling BlePeripheral.initialize()...');
-      await BlePeripheral.initialize();
+      if (Platform.isAndroid ||
+          Platform.isIOS ||
+          Platform.isMacOS ||
+          Platform.isWindows) {
+        _log.info('Calling BlePeripheral.initialize()...');
+        await BlePeripheral.initialize();
+      }
     } catch (e) {
       _log.severe('BlePeripheral.initialize() failed: $e');
     }
 
-    final bluetoothOn = await _waitForBluetooth();
-
-    if (!bluetoothOn) {
-      _initialized = false;
-      return false;
+    if (Platform.isAndroid || Platform.isIOS) {
+      final bluetoothOn = await _waitForBluetooth();
+      if (!bluetoothOn) {
+        _initialized = false;
+        return false;
+      }
     }
-
-    // Extra stabilization for Android 16
-    await Future.delayed(const Duration(seconds: 1));
 
     _log.fine('All required permissions granted and bluetooth running');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
       _log.info('Advertising status updated: isAdvertising=$isAdvertising');
       _advertisingStatusController.add(isAdvertising);
+      _isAdvertising = isAdvertising;
 
       if (error != null) {
         _log.severe('Error occurred while updating advertising status: $error');
         _advertisingStatusController.add(false);
+        _isAdvertising = false;
       }
     });
 
@@ -126,6 +139,8 @@ class BLEAdvertiser {
 
   Stream<bool> get advertisingStatusStream =>
       _advertisingStatusController.stream;
+
+  bool get isAdvetising => _isAdvertising;
 
   Future<void> startAdvertising({required String localName}) async {
     try {

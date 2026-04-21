@@ -1,0 +1,84 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'router.dart';
+
+// **************************************************************************
+// GoRouterGenerator
+// **************************************************************************
+
+List<RouteBase> get $appRoutes => [
+  $homeRoute,
+  $advertiseRoute,
+  $discoveryRoute,
+];
+
+RouteBase get $homeRoute =>
+    GoRouteData.$route(path: '/', factory: $HomeRoute._fromState);
+
+mixin $HomeRoute on GoRouteData {
+  static HomeRoute _fromState(GoRouterState state) => const HomeRoute();
+
+  @override
+  String get location => GoRouteData.$location('/');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $advertiseRoute =>
+    GoRouteData.$route(path: '/advertise', factory: $AdvertiseRoute._fromState);
+
+mixin $AdvertiseRoute on GoRouteData {
+  static AdvertiseRoute _fromState(GoRouterState state) =>
+      const AdvertiseRoute();
+
+  @override
+  String get location => GoRouteData.$location('/advertise');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+RouteBase get $discoveryRoute =>
+    GoRouteData.$route(path: '/discovery', factory: $DiscoveryRoute._fromState);
+
+mixin $DiscoveryRoute on GoRouteData {
+  static DiscoveryRoute _fromState(GoRouterState state) =>
+      const DiscoveryRoute();
+
+  @override
+  String get location => GoRouteData.$location('/discovery');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}

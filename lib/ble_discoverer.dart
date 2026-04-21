@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -16,10 +17,6 @@ class BleDiscoverer {
   static bool _initialized = false;
   static final BleDiscoverer _instance = BleDiscoverer._internal();
   static final Logger _log = Logger('BleDiscoverer');
-  static StreamController<List<DiscoveredDevice>> _resultsController =
-      StreamController.broadcast();
-  static List<DiscoveredDevice> _currentResults = [];
-  static List<DiscoveredDevice> _prevResults = [];
 
   factory BleDiscoverer() => _instance;
 
@@ -27,90 +24,90 @@ class BleDiscoverer {
 
   Future<bool> initialize() async {
     if (_initialized) return true;
+
+    // Safety delay for Chromebook/Android container initialization
+    await Future.delayed(const Duration(milliseconds: 500));
     _initialized = true;
 
-    // Check whether permissions are granted using permissions_handler or similar package
-    // If not granted, request permissions and return false if not granted
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final permissions = await [
+          Permission.bluetoothScan,
+          Permission.bluetoothConnect,
+          Permission.location,
+          Permission.locationWhenInUse,
+        ].request();
+
+        bool failed = false;
+
+        for (final permission in permissions.entries) {
+          if (permission.value.isDenied) {
+            _log.warning('Permission ${permission.key} denied');
+            failed = true;
+          } else if (permission.value.isPermanentlyDenied) {
+            _log.warning('Permission ${permission.key} permanently denied');
+            failed = true;
+          } else {
+            _log.info('Permission ${permission.key} granted');
+          }
+        }
+
+        if (failed) {
+          _initialized = false;
+          return false;
+        }
+      } else {
+        _log.info('Skipping runtime permissions on non-mobile platform');
+      }
+    } catch (e) {
+      _log.severe('Error requesting permissions: $e');
+      _initialized = false;
+      return false;
+    }
+
+    // Check whether supported using flutter_blue_plus
     try {
       final isSupported = await FlutterBluePlus.isSupported == true;
-
       if (!isSupported) {
         _log.severe('BLE Scanner mode is not supported on this device');
         _initialized = false;
         return false;
       }
 
-      _log.fine("BLE Scanner mode is supported on this device");
+      FlutterBluePlus.onScanResults.listen((results) async {
+        for (final result in results) {
+          final BluetoothDevice device = result.device;
+          final DateTime datetime = result.timeStamp;
+
+          final String platform = device.platformName;
+          final String advName = device.advName;
+          final String remoteId = device.remoteId.toString();
+
+          await device.discoverServices();
+
+          final List<BluetoothService> services = device.servicesList;
+          final bool hasTargetService = services.any(
+            (service) => service.uuid.toString() == BLEAdvertiser.serviceUuid,
+          );
+
+          _log.info(
+            'Discovered device: name=$advName, rssi=${result.rssi}, platform=$platform, time=$datetime, remoteId=$remoteId, hasTargetService=$hasTargetService, numberOfServices=${services.length}',
+          );
+        }
+      });
+
+      return true;
     } catch (e) {
-      _log.severe('Error occurred while checking BLE support: $e');
+      _log.severe('Error checking support or setting up listener: $e');
       _initialized = false;
       return false;
     }
-
-    final permissions = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-    ].request();
-
-    bool failed = false;
-
-    for (final permission in permissions.entries) {
-      if (permission.value.isDenied) {
-        _log.warning('Permission ${permission.key} denied');
-        failed = true;
-      } else if (permission.value.isPermanentlyDenied) {
-        _log.warning('Permission ${permission.key} permanently denied');
-        failed = true;
-      } else {
-        _log.info('Permission ${permission.key} granted');
-      }
-    }
-
-    if (failed) {
-      _initialized = false;
-      return false;
-    }
-
-    _log.fine('All required permissions granted');
-
-    FlutterBluePlus.onScanResults.listen((results) async {
-      for (final result in results) {
-        final BluetoothDevice device = result.device;
-        final DateTime datetime = result.timeStamp;
-        // final AdvertisementData advData = result.advertisementData;
-
-        final String platform = device.platformName;
-        final String advName = device.advName;
-        final String remoteId = device.remoteId.toString();
-
-        await device.discoverServices();
-
-        final List<BluetoothService> services = device.servicesList;
-        final bool hasTargetService = services.any(
-          (service) => service.uuid.toString() == BLEAdvertiser.serviceUuid,
-        );
-
-        _log.info(
-          'Discovered device: name=$advName, rssi=${result.rssi}, platform=$platform, time=$datetime, remoteId=$remoteId, hasTargetService=$hasTargetService, numberOfServices=${services.length}',
-        );
-      }
-    });
-
-    return true;
   }
-
-  List<DiscoveredDevice> get prevResults => List.unmodifiable(_prevResults);
-
-  Stream<List<DiscoveredDevice>> get resultsStream => _resultsController.stream;
 
   Stream<bool> get isDiscoveringStream => FlutterBluePlus.isScanning;
 
-  Future<void> discover({
-    void Function(
-      Stream<List<DiscoveredDevice>> stream,
-      List<DiscoveredDevice> initial,
-    )?
-    freshCb,
+  Future<List<DiscoveredDevice>> discover({
+    void Function(double progress)? onProgress,
   }) async {
     if (!_initialized) {
       _log.warning('BleDiscoverer not initialized, initializing now');
@@ -120,20 +117,15 @@ class BleDiscoverer {
         _log.severe(
           'Failed to initialize BleDiscoverer, cannot start discovering',
         );
-        return;
+        throw Exception(
+          'Failed to initialize BleDiscoverer, cannot start discovering',
+        );
       }
     }
 
     if (FlutterBluePlus.isScanningNow) {
       _log.severe("Wait until the previous scan is finished");
-      return;
-    }
-
-    _prevResults = _currentResults;
-
-    if (freshCb != null) {
-      _resultsController = StreamController.broadcast();
-      freshCb(resultsStream, prevResults);
+      throw Exception("Wait until the previous scan is finished");
     }
 
     final currentResults = <ScanResult>[];
@@ -141,9 +133,17 @@ class BleDiscoverer {
       (results) => currentResults.addAll(results),
     );
 
+    final timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (onProgress != null) onProgress(timer.tick / 10);
+
+      if (timer.tick == 10) timer.cancel();
+    });
+
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
     await subscription.cancel();
+
+    timer.cancel();
 
     final List<DiscoveredDevice> resolvedDevices = await Future.wait(
       currentResults.map((it) async {
@@ -161,11 +161,7 @@ class BleDiscoverer {
       }),
     );
 
-    _resultsController.add(resolvedDevices);
-
-    if (freshCb != null) await _resultsController.close();
-
-    _currentResults = resolvedDevices;
+    return resolvedDevices;
   }
 
   Future<void> stopDiscovering() async {
