@@ -144,9 +144,23 @@ class BLEDiscoverer {
 
     _log.info("Starting scan...");
 
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+    try {
+      // Android/Chromebook safety: stop any existing scan first
+      await FlutterBluePlus.stopScan();
+      await Future.delayed(const Duration(milliseconds: 200));
 
-    _log.info("Scan finished");
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 10),
+        androidUsesFineLocation: true, // Required for some Android versions
+      );
+    } catch (e) {
+      _log.severe("Failed to start scan: $e");
+      if (onProgress != null) timer?.cancel();
+      await subscription.cancel();
+      rethrow;
+    }
+
+    _log.info("Scan finished (timeout or manual stop)");
 
     await subscription.cancel();
 
