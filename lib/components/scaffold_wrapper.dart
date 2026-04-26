@@ -7,6 +7,7 @@ class ScaffoldWrapper extends StatelessWidget {
     super.key,
     this.body,
     this.actions = const [],
+    this.padding,
     this.screen,
     this.withLog = false,
     this.centered = false,
@@ -14,6 +15,7 @@ class ScaffoldWrapper extends StatelessWidget {
 
   final Widget? body;
   final List<Widget> actions;
+  final EdgeInsets? padding;
   final String? screen;
   final bool withLog;
   final bool centered;
@@ -29,6 +31,11 @@ class ScaffoldWrapper extends StatelessWidget {
     } else {
       title = screen!.substring(1).title();
     }
+
+    Widget? widget = body;
+
+    if (centered) widget = Center(child: widget);
+    if (padding != null) widget = Padding(padding: padding!, child: widget);
 
     return SafeArea(
       child: Scaffold(
@@ -47,7 +54,7 @@ class ScaffoldWrapper extends StatelessWidget {
               ),
           ],
         ),
-        body: centered ? Center(child: body) : body,
+        body: widget,
       ),
     );
   }
