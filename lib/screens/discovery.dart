@@ -12,7 +12,8 @@ class DiscoveryScreen extends ConsumerWidget {
     final deviceState = ref.watch(foundDevicesStateProvider);
 
     return ScaffoldWrapper(
-      subPage: DiscoveryRoute().location.substring(1),
+      screen: DiscoveryRoute().location,
+      centered: true,
       withLog: true,
       body: switch (deviceState) {
         AsyncLoading(progress: final progress) => Center(

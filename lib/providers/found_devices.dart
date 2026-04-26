@@ -5,7 +5,7 @@ part 'found_devices.g.dart';
 
 @Riverpod(keepAlive: true)
 class FoundDevicesState extends _$FoundDevicesState {
-  final BleDiscoverer _service = BleDiscoverer();
+  final BLEDiscoverer _service = BLEDiscoverer();
 
   @override
   FutureOr<List<DiscoveredDevice>> build() async => [];

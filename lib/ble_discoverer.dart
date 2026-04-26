@@ -13,14 +13,14 @@ typedef DiscoveredDevice = ({
   ScanResult result,
 });
 
-class BleDiscoverer {
+class BLEDiscoverer {
   static bool _initialized = false;
-  static final BleDiscoverer _instance = BleDiscoverer._internal();
-  static final Logger _log = Logger('BleDiscoverer');
+  static final BLEDiscoverer _instance = BLEDiscoverer._internal();
+  static final Logger _log = Logger('BLEDiscoverer');
 
-  factory BleDiscoverer() => _instance;
+  factory BLEDiscoverer() => _instance;
 
-  BleDiscoverer._internal();
+  BLEDiscoverer._internal();
 
   Future<bool> initialize() async {
     if (_initialized) return true;

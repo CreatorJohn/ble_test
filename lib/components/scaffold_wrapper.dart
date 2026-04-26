@@ -7,25 +7,35 @@ class ScaffoldWrapper extends StatelessWidget {
     super.key,
     this.body,
     this.actions = const [],
-    this.subPage,
+    this.screen,
     this.withLog = false,
+    this.centered = false,
   });
 
   final Widget? body;
   final List<Widget> actions;
-  final String? subPage;
+  final String? screen;
   final bool withLog;
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
-    final extra = subPage != null ? " - ${subPage!.title()}" : "";
+    final String title;
+
+    if (screen == null || screen == "/") {
+      title = "BLE Test App";
+    } else if (!screen!.startsWith("/")) {
+      throw Exception("Invalid screen route!");
+    } else {
+      title = screen!.substring(1).title();
+    }
 
     return SafeArea(
       maintainBottomViewPadding: true,
       minimum: const EdgeInsets.all(8.0),
       child: Scaffold(
         appBar: AppBar(
-          title: Text("BLE Test App$extra"),
+          title: Text(title),
           centerTitle: true,
           actions: [
             ...actions,
@@ -39,7 +49,7 @@ class ScaffoldWrapper extends StatelessWidget {
               ),
           ],
         ),
-        body: body,
+        body: centered ? Center(child: body) : body,
       ),
     );
   }
