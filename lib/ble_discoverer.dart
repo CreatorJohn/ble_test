@@ -133,17 +133,21 @@ class BleDiscoverer {
       (results) => currentResults.addAll(results),
     );
 
-    final timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (onProgress != null) onProgress(timer.tick / 10);
+    final Timer? timer = null;
 
-      if (timer.tick == 10) timer.cancel();
-    });
+    if (onProgress != null) {
+      Timer.periodic(const Duration(seconds: 1), (timer) {
+        onProgress(timer.tick / 10);
+
+        if (timer.tick == 10) timer.cancel();
+      });
+    }
 
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
     await subscription.cancel();
 
-    timer.cancel();
+    if (onProgress != null) timer?.cancel();
 
     final List<DiscoveredDevice> resolvedDevices = await Future.wait(
       currentResults.map((it) async {
