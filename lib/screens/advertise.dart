@@ -35,9 +35,7 @@ class AdvertiseScreen extends ConsumerWidget {
             builder: (context, snapshot) {
               final advertising = snapshot.data;
 
-              if (advertising == null) {
-                return Text("Can't advertise");
-              } else if (advertising) {
+              if (advertising == true) {
                 return ElevatedButton(
                   onPressed: () => _service.startAdvertising(
                     localName: _controller.text.trim(),
