@@ -73,19 +73,8 @@ class BLEDiscoverer {
         return false;
       }
 
-      FlutterBluePlus.onScanResults.listen((results) async {
-        for (final result in results) {
-          final BluetoothDevice device = result.device;
-          final DateTime datetime = result.timeStamp;
-
-          final String platform = device.platformName;
-          final String advName = device.advName;
-          final String remoteId = device.remoteId.toString();
-
-          _log.info(
-            'Discovered device: name=$advName, rssi=${result.rssi}, platform=$platform, time=$datetime, remoteId=$remoteId',
-          );
-        }
+      FlutterBluePlus.onScanResults.listen((results) {
+        _log.info("Scanned ${results.length} devices");
       });
 
       return true;
@@ -155,6 +144,8 @@ class BLEDiscoverer {
       if (onProgress != null) timer?.cancel();
       await subscription.cancel();
     }
+
+    _log.info("Currently scanned ${currentResults.length}");
 
     final List<DiscoveredDevice> resolvedDevices = await Future.wait(
       currentResults.map((it) async {
