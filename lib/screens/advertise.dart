@@ -37,15 +37,15 @@ class AdvertiseScreen extends ConsumerWidget {
 
               if (advertising == true) {
                 return ElevatedButton(
+                  onPressed: () => _service.stopAdvertising(),
+                  child: const Text("Stop advertising"),
+                );
+              } else {
+                return ElevatedButton(
                   onPressed: () => _service.startAdvertising(
                     localName: _controller.text.trim(),
                   ),
                   child: const Text("Advertise"),
-                );
-              } else {
-                return ElevatedButton(
-                  onPressed: () => _service.stopAdvertising(),
-                  child: const Text("Stop advertising"),
                 );
               }
             },

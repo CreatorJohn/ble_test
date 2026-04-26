@@ -11,31 +11,30 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return ScaffoldWrapper(
       withLog: true,
-      body: Center(
-        child: Column(
-          spacing: 8.0,
-          children: [
-            const Text("Select app mode"),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
-                ),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        spacing: 8.0,
+        children: [
+          const Text("Select app mode"),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
               ),
-              onPressed: () => context.push(AdvertiseRoute().location),
-              child: const Text("Advertise"),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
-                ),
+            onPressed: () => context.push(AdvertiseRoute().location),
+            child: const Text("Advertise"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
               ),
-              onPressed: () => context.push(DiscoveryRoute().location),
-              child: const Text("Discovery"),
             ),
-          ],
-        ),
+            onPressed: () => context.push(DiscoveryRoute().location),
+            child: const Text("Discovery"),
+          ),
+        ],
       ),
     );
   }

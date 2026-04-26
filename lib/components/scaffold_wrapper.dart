@@ -31,8 +31,6 @@ class ScaffoldWrapper extends StatelessWidget {
     }
 
     return SafeArea(
-      maintainBottomViewPadding: true,
-      minimum: const EdgeInsets.all(8.0),
       child: Scaffold(
         appBar: AppBar(
           title: Text(title),
