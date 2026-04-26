@@ -10,7 +10,9 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ScaffoldWrapper(
+      centered: true,
       withLog: true,
+      padding: EdgeInsets.all(8.0),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         spacing: 8.0,

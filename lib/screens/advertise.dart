@@ -17,6 +17,8 @@ class AdvertiseScreen extends ConsumerWidget {
     return ScaffoldWrapper(
       screen: AdvertiseRoute().location,
       withLog: true,
+      centered: true,
+      padding: EdgeInsets.all(8.0),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         spacing: 8.0,

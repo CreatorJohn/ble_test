@@ -15,6 +15,7 @@ class DiscoveryScreen extends ConsumerWidget {
       screen: DiscoveryRoute().location,
       centered: true,
       withLog: true,
+      padding: EdgeInsets.all(8.0),
       body: switch (deviceState) {
         AsyncLoading(progress: final progress) => Center(
           child: CircularProgressIndicator.adaptive(
