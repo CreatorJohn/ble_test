@@ -13,7 +13,8 @@ class WatchLog {
   static final Logger _log = Logger('WatchLog');
   static final WatchLog _instance = WatchLog._internal();
   static final List<LogRecord> _logBuffer = [];
-  static final StreamController<LogRecord> _logStream = StreamController.broadcast();
+  static final StreamController<LogRecord> _logStream =
+      StreamController.broadcast();
 
   factory WatchLog() => _instance;
 
@@ -26,14 +27,12 @@ class WatchLog {
     // Initialize logging
     Logger.root.level = Level.ALL; // Log all messages
     Logger.root.onRecord.listen((record) {
-      _logStream.add((
-        '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}',
-        record.level,
-      ));
-      _logBuffer.add((
-        '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}',
-        record.level,
-      ));
+      final message =
+          '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}';
+
+      _logStream.add((message, record.level));
+      _logBuffer.add((message, record.level));
+      print(message);
     });
   }
 

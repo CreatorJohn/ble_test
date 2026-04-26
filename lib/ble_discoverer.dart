@@ -15,12 +15,11 @@ typedef DiscoveredDevice = ({
 
 class BLEDiscoverer {
   static bool _initialized = false;
-  static final BLEDiscoverer _instance = BLEDiscoverer._internal();
   static final Logger _log = Logger('BLEDiscoverer');
 
-  factory BLEDiscoverer() => _instance;
+  const factory BLEDiscoverer() = BLEDiscoverer._internal;
 
-  BLEDiscoverer._internal();
+  const BLEDiscoverer._internal();
 
   Future<bool> initialize() async {
     if (_initialized) return true;
@@ -133,10 +132,10 @@ class BLEDiscoverer {
       (results) => currentResults.addAll(results),
     );
 
-    final Timer? timer = null;
+    Timer? timer;
 
     if (onProgress != null) {
-      Timer.periodic(const Duration(seconds: 1), (timer) {
+      timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         onProgress(timer.tick / 10);
 
         if (timer.tick == 10) timer.cancel();
