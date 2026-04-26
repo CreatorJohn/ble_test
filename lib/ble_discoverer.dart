@@ -82,15 +82,8 @@ class BLEDiscoverer {
           final String advName = device.advName;
           final String remoteId = device.remoteId.toString();
 
-          await device.discoverServices();
-
-          final List<BluetoothService> services = device.servicesList;
-          final bool hasTargetService = services.any(
-            (service) => service.uuid.toString() == BLEAdvertiser.serviceUuid,
-          );
-
           _log.info(
-            'Discovered device: name=$advName, rssi=${result.rssi}, platform=$platform, time=$datetime, remoteId=$remoteId, hasTargetService=$hasTargetService, numberOfServices=${services.length}',
+            'Discovered device: name=$advName, rssi=${result.rssi}, platform=$platform, time=$datetime, remoteId=$remoteId',
           );
         }
       });
@@ -153,18 +146,15 @@ class BLEDiscoverer {
         timeout: const Duration(seconds: 10),
         androidUsesFineLocation: true, // Required for some Android versions
       );
+
+      _log.info("Scan finished (timeout or manual stop)");
     } catch (e) {
       _log.severe("Failed to start scan: $e");
+      rethrow;
+    } finally {
       if (onProgress != null) timer?.cancel();
       await subscription.cancel();
-      rethrow;
     }
-
-    _log.info("Scan finished (timeout or manual stop)");
-
-    await subscription.cancel();
-
-    if (onProgress != null) timer?.cancel();
 
     final List<DiscoveredDevice> resolvedDevices = await Future.wait(
       currentResults.map((it) async {
