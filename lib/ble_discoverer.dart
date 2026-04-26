@@ -142,7 +142,11 @@ class BLEDiscoverer {
       });
     }
 
+    _log.info("Starting scan...");
+
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+
+    _log.info("Scan finished");
 
     await subscription.cancel();
 
@@ -176,6 +180,8 @@ class BLEDiscoverer {
     }
 
     await FlutterBluePlus.stopScan();
+
+    _log.info("Scan stopped manually");
 
     await Future.delayed(const Duration(milliseconds: 500));
   }
