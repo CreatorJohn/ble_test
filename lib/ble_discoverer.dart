@@ -147,20 +147,42 @@ class BLEDiscoverer {
 
     _log.info("Currently scanned ${currentResults.length}");
 
-    final List<DiscoveredDevice> resolvedDevices = await Future.wait(
-      currentResults.map((it) async {
-        final services = await it.device.discoverServices();
+    Stream<({ScanResult result, List<BluetoothService> services})>
+    process() async* {
+      for (final found in currentResults) {
+        try {
+          await found.device.connect(license: License.free);
+
+          final services = await found.device.discoverServices();
+
+          yield (result: found, services: services);
+        } catch (_) {
+          _log.severe("Device ${found.device.remoteId} failed!");
+        } finally {
+          await found.device.disconnect().catchError((_) {});
+        }
+      }
+    }
+
+    final List<DiscoveredDevice> resolvedDevices = await process().fold(
+      <DiscoveredDevice>[],
+      (prev, acc) {
+        final result = acc.result;
+        final services = acc.services;
         final hasTargetService = services.any(
           (it) => it.uuid.str == BLEAdvertiser.serviceUuid,
         );
 
-        return (
-          remoteId: it.device.remoteId.toString(),
-          services: services,
-          hasTargetService: hasTargetService,
-          result: it,
-        );
-      }),
+        return [
+          ...prev,
+          (
+            remoteId: result.device.remoteId.toString(),
+            services: services,
+            hasTargetService: hasTargetService,
+            result: result,
+          ),
+        ];
+      },
     );
 
     return resolvedDevices;
