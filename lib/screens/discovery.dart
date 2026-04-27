@@ -18,7 +18,7 @@ class DiscoveryScreen extends ConsumerWidget {
       screen: DiscoveryRoute().location,
       centered: true,
       withLog: true,
-      padding: EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       actions: [
         StreamBuilder(
           stream: _service.isDiscoveringStream,
@@ -34,47 +34,54 @@ class DiscoveryScreen extends ConsumerWidget {
 
             return IconButton(
               onPressed: ref.read(foundDevicesStateProvider.notifier).discover,
-              icon: Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh),
             );
           },
         ),
       ],
-      body: switch (deviceState) {
-        AsyncLoading(progress: final progress) => Center(
-          child: CircularProgressIndicator.adaptive(
-            value: progress?.toDouble(),
-          ),
-        ),
-        AsyncData(value: final devices) =>
-          deviceState.isLoading
-              ? CircularProgressIndicator.adaptive(
-                  value: deviceState.progress?.toDouble(),
-                )
-              : devices.isNotEmpty
-              ? ListView.builder(
-                  itemBuilder: (context, index) {
-                    final item = devices[index];
-                    final subtitle = item.hasTargetService ? "Yes" : "No";
+      body: deviceState.isLoading
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator.adaptive(
+                    value: deviceState.progress?.toDouble(),
+                  ),
+                  if (deviceState.progress != null) ...[
+                    const SizedBox(height: 16),
+                    Text("${(deviceState.progress! * 100).toInt()}%"),
+                  ],
+                ],
+              ),
+            )
+          : deviceState.when(
+              data: (devices) => devices.isNotEmpty
+                  ? ListView.builder(
+                      itemCount: devices.length,
+                      itemBuilder: (context, index) {
+                        final item = devices[index];
+                        final subtitle = item.hasTargetService ? "Yes" : "No";
 
-                    return ListTile(
-                      title: Text(
-                        "${item.result.device.advName} | ${item.result.device.remoteId.str}",
-                      ),
-                      subtitle: Text(
-                        "Number of services: ${item.services.length} | Has targeted service? $subtitle",
-                      ),
-                      isThreeLine: true,
-                    );
-                  },
-                )
-              : const Text("No devices found..."),
-        AsyncError(error: final error, stackTrace: _) => Center(
-          child: Text(
-            error.toString(),
-            style: TextStyle(color: Colors.red.shade800),
-          ),
-        ),
-      },
+                        return ListTile(
+                          title: Text(
+                            "${item.result.device.advName} | ${item.result.device.remoteId.str}",
+                          ),
+                          subtitle: Text(
+                            "Number of services: ${item.services.length} | Has targeted service? $subtitle",
+                          ),
+                          isThreeLine: true,
+                        );
+                      },
+                    )
+                  : const Center(child: Text("No devices found...")),
+              error: (error, stackTrace) => Center(
+                child: Text(
+                  error.toString(),
+                  style: TextStyle(color: Colors.red.shade800),
+                ),
+              ),
+              loading: () => const SizedBox.shrink(),
+            ),
     );
   }
 }
