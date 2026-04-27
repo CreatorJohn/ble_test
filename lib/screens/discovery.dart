@@ -46,7 +46,11 @@ class DiscoveryScreen extends ConsumerWidget {
           ),
         ),
         AsyncData(value: final devices) =>
-          devices.isNotEmpty
+          deviceState.isLoading
+              ? CircularProgressIndicator.adaptive(
+                  value: deviceState.progress?.toDouble(),
+                )
+              : devices.isNotEmpty
               ? ListView.builder(
                   itemBuilder: (context, index) {
                     final item = devices[index];
