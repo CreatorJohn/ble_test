@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:ble_test/ble_advertiser.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:logging/logging.dart' show Logger;
 import 'package:permission_handler/permission_handler.dart';
@@ -109,12 +108,8 @@ class BLEDiscoverer {
       throw Exception("Wait until the previous scan is finished");
     }
 
-    final currentResults = <ScanResult>[];
-    final subscription = FlutterBluePlus.onScanResults.listen(
-      (results) => currentResults.addAll(results),
-    );
-
     Timer? timer;
+    const scanTimeout = Duration(seconds: 10);
 
     if (onProgress != null) {
       timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -132,60 +127,25 @@ class BLEDiscoverer {
       await Future.delayed(const Duration(milliseconds: 200));
 
       await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 10),
+        timeout: scanTimeout,
         androidUsesFineLocation: true, // Required for some Android versions
       );
 
-      _log.info("Scan finished (timeout or manual stop)");
+      // Wait for scan to finish (FBP 2.x startScan returns immediately)
+      await FlutterBluePlus.isScanning
+          .where((scanning) => !scanning)
+          .first
+          .timeout(scanTimeout + const Duration(seconds: 1));
+
+      _log.info("Scan finished");
     } catch (e) {
-      _log.severe("Failed to start scan: $e");
-      rethrow;
+      _log.warning("Scan stopped or timed out: $e");
     } finally {
       if (onProgress != null) timer?.cancel();
-      await subscription.cancel();
     }
 
+    final currentResults = FlutterBluePlus.lastScanResults;
     _log.info("Currently scanned ${currentResults.length}");
-
-    /*
-    Stream<({ScanResult result, List<BluetoothService> services})>
-    process() async* {
-      for (final found in currentResults) {
-        try {
-          await found.device.connect(license: License.free);
-
-          final services = await found.device.discoverServices();
-
-          yield (result: found, services: services);
-        } catch (_) {
-          _log.severe("Device ${found.device.remoteId} failed!");
-        } finally {
-          await found.device.disconnect().catchError((_) {});
-        }
-      }
-    }
-
-    final List<DiscoveredDevice> resolvedDevices = await process().fold(
-      <DiscoveredDevice>[],
-      (prev, acc) {
-        final result = acc.result;
-        final services = acc.services;
-        final hasTargetService = services.any(
-          (it) => it.uuid.str == BLEAdvertiser.serviceUuid,
-        );
-
-        return [
-          ...prev,
-          (
-            remoteId: result.device.remoteId.toString(),
-            services: services,
-            hasTargetService: hasTargetService,
-            result: result,
-          ),
-        ];
-      },
-    );
-    */
 
     return currentResults
         .map<DiscoveredDevice>(
