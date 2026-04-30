@@ -147,6 +147,7 @@ class BLEDiscoverer {
 
     _log.info("Currently scanned ${currentResults.length}");
 
+    /*
     Stream<({ScanResult result, List<BluetoothService> services})>
     process() async* {
       for (final found in currentResults) {
@@ -184,8 +185,18 @@ class BLEDiscoverer {
         ];
       },
     );
+    */
 
-    return resolvedDevices;
+    return currentResults
+        .map<DiscoveredDevice>(
+          (d) => (
+            remoteId: d.device.remoteId.toString(),
+            result: d,
+            services: [],
+            hasTargetService: false,
+          ),
+        )
+        .toList();
   }
 
   Future<void> stopDiscovering() async {
