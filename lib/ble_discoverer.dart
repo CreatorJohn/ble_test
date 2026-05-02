@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:logging/logging.dart' show Logger;
 import 'package:permission_handler/permission_handler.dart';
@@ -147,16 +148,36 @@ class BLEDiscoverer {
     final currentResults = FlutterBluePlus.lastScanResults;
     _log.info("Currently scanned ${currentResults.length}");
 
-    return currentResults
-        .map<DiscoveredDevice>(
-          (d) => (
-            remoteId: d.device.remoteId.toString(),
-            result: d,
-            services: [],
-            hasTargetService: false,
-          ),
-        )
-        .toList();
+    Stream<DiscoveredDevice> process(List<ScanResult> results) async* {
+      for (final result in results) {
+        List<BluetoothService> services = [];
+
+        try {
+          await result.device.connect(license: License.free);
+
+          services = await result.device.discoverServices();
+        } on Error catch (e) {
+          _log.severe(e);
+        } finally {
+          await result.device.disconnect().catchError((_) {});
+        }
+
+        bool hasTargetService = services.any(
+          (s) => s.uuid.toString() == BLEAdvertiser.serviceUuid,
+        );
+
+        yield (
+          remoteId: result.device.remoteId.toString(),
+          result: result,
+          services: services,
+          hasTargetService: hasTargetService,
+        );
+      }
+    }
+
+    return await process(
+      currentResults,
+    ).fold(<DiscoveredDevice>[], (acc, curr) => [...acc, curr]);
   }
 
   Future<void> stopDiscovering() async {
