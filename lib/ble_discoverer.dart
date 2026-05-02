@@ -112,14 +112,6 @@ class BLEDiscoverer {
     Timer? timer;
     const scanTimeout = Duration(seconds: 10);
 
-    if (onProgress != null) {
-      timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        onProgress(timer.tick / 10);
-
-        if (timer.tick == 10) timer.cancel();
-      });
-    }
-
     _log.info("Starting scan...");
 
     try {
@@ -132,11 +124,26 @@ class BLEDiscoverer {
         androidUsesFineLocation: true, // Required for some Android versions
       );
 
-      // Wait for scan to finish (FBP 2.x startScan returns immediately)
+      // 1. Wait for scanning to be TRUE (hardware wake up)
       await FlutterBluePlus.isScanning
-          .where((scanning) => !scanning)
+          .where((s) => s)
           .first
-          .timeout(scanTimeout + const Duration(seconds: 1));
+          .timeout(const Duration(seconds: 2))
+          .catchError((_) => true);
+
+      // 2. NOW start the progress timer so it is synced with actual scanning
+      if (onProgress != null) {
+        timer = Timer.periodic(const Duration(seconds: 1), (t) {
+          onProgress(t.tick / 10);
+          if (t.tick >= 10) t.cancel();
+        });
+      }
+
+      // 3. Wait for scanning to be FALSE (scan completed)
+      await FlutterBluePlus.isScanning
+          .where((s) => !s)
+          .first
+          .timeout(scanTimeout + const Duration(seconds: 2));
 
       _log.info("Scan finished");
     } catch (e) {
@@ -145,39 +152,27 @@ class BLEDiscoverer {
       if (onProgress != null) timer?.cancel();
     }
 
-    final currentResults = FlutterBluePlus.lastScanResults;
-    _log.info("Currently scanned ${currentResults.length}");
+    // Use a Map to ensure unique devices by remoteId
+    final Map<String, DiscoveredDevice> uniqueDevices = {};
 
-    Stream<DiscoveredDevice> process(List<ScanResult> results) async* {
-      for (final result in results) {
-        List<BluetoothService> services = [];
+    for (final result in FlutterBluePlus.lastScanResults) {
+      final remoteId = result.device.remoteId.toString();
 
-        try {
-          await result.device.connect(license: License.free);
+      // Check advertisement data for the target service UUID (no connection needed)
+      final hasTarget = result.advertisementData.serviceUuids
+          .any((uuid) => uuid.toString().toLowerCase() == BLEAdvertiser.serviceUuid.toLowerCase());
 
-          services = await result.device.discoverServices();
-        } on Error catch (e) {
-          _log.severe(e);
-        } finally {
-          await result.device.disconnect().catchError((_) {});
-        }
-
-        bool hasTargetService = services.any(
-          (s) => s.uuid.toString() == BLEAdvertiser.serviceUuid,
-        );
-
-        yield (
-          remoteId: result.device.remoteId.toString(),
-          result: result,
-          services: services,
-          hasTargetService: hasTargetService,
-        );
-      }
+      uniqueDevices[remoteId] = (
+        remoteId: remoteId,
+        result: result,
+        services: [], // We don't connect to keep discovery fast
+        hasTargetService: hasTarget,
+      );
     }
 
-    return await process(
-      currentResults,
-    ).fold(<DiscoveredDevice>[], (acc, curr) => [...acc, curr]);
+    _log.info("Found ${uniqueDevices.length} unique devices");
+
+    return uniqueDevices.values.toList();
   }
 
   Future<void> stopDiscovering() async {
