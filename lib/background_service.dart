@@ -18,6 +18,7 @@ Future<void> initializeBackgroundService() async {
       notificationChannelId: "ble_scanning_channel",
       initialNotificationTitle: "BLE Test App",
       initialNotificationContent: "Scanning for nearby devices...",
+      foregroundServiceTypes: [AndroidForegroundType.connectedDevice],
     ),
     iosConfiguration: IosConfiguration(
       autoStart: true,
@@ -36,10 +37,27 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
-  final dir = await getApplicationDocumentsDirectory();
-  final isar = await Isar.open([FoundDeviceSchema], directory: dir.path);
+  // Give the system a moment to stabilize
+  await Future.delayed(const Duration(seconds: 1));
+
+  Isar? isar;
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    isar = await Isar.open([FoundDeviceSchema], directory: dir.path);
+  } catch (e) {
+    // If we can't open Isar, we might as well stop or log heavily
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: "BLE Test App - Error",
+        content: "Failed to initialize database: $e",
+      );
+    }
+    return;
+  }
 
   FlutterBluePlus.scanResults.listen((results) async {
+    if (isar == null || !isar.isOpen) return;
+
     for (final ScanResult result in results) {
       final device = FoundDevice()
         ..remoteId = result.device.remoteId.toString()
@@ -49,15 +67,25 @@ void onStart(ServiceInstance service) async {
         ..rssi = result.rssi
         ..lastSeen = DateTime.now();
 
-      await isar.writeTxn(() async {
-        await isar.foundDevices.put(device);
-      });
+      try {
+        await isar.writeTxn(() async {
+          await isar!.foundDevices.put(device);
+        });
+      } catch (e) {
+        // Log or handle write error
+      }
     }
   });
 
   Timer.periodic(const Duration(seconds: 80), (timer) async {
-    if (FlutterBluePlus.isScanningNow == false) {
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 20));
+    try {
+      if (await FlutterBluePlus.isSupported == false) return;
+
+      if (FlutterBluePlus.isScanningNow == false) {
+        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 20));
+      }
+    } catch (e) {
+      // Handle scan start error
     }
   });
 }
