@@ -32,10 +32,11 @@ void main() async {
 
   runApp(const ProviderScope(child: MainApp()));
 
-  // 3. Start service AFTER UI is up
-  // Long delay for Chromebook stabilization
-  Future.delayed(const Duration(seconds: 2), () async {
-    await initializeBackgroundService();
+  // 3. Start service AFTER UI is up and permission confirmed
+  Future.delayed(const Duration(seconds: 3), () async {
+    if (await Permission.notification.isGranted) {
+      await initializeBackgroundService();
+    }
   });
 }
 

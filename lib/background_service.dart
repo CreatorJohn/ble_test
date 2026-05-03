@@ -14,9 +14,9 @@ Future<void> initializeBackgroundService() async {
       onStart: onStart,
       autoStart: true,
       isForegroundMode: true,
-      notificationChannelId: "ble_scanning_channel",
-      initialNotificationTitle: "BLE Test App",
-      initialNotificationContent: "Scanning for nearby devices...",
+      notificationChannelId: "scanning_status",
+      initialNotificationTitle: "BLE Scanner",
+      initialNotificationContent: "Monitoring nearby devices",
       foregroundServiceTypes: [AndroidForegroundType.connectedDevice],
     ),
     iosConfiguration: IosConfiguration(
