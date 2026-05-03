@@ -11,15 +11,22 @@ void main() async {
 
   await WatchLog.initialize();
 
-  // Request permissions before starting background service
+  // 1. Request foreground permissions first
   await [
     Permission.bluetoothScan,
     Permission.bluetoothConnect,
     Permission.bluetoothAdvertise,
     Permission.location,
-    Permission.locationAlways,
     Permission.notification,
   ].request();
+
+  // 2. Request background location separately (Mandatory for Android 11+)
+  if (await Permission.location.isGranted) {
+    await Permission.locationAlways.request();
+  }
+
+  // 3. Safety delay for Chromebook/Android stabilization after dialogs close
+  await Future.delayed(const Duration(milliseconds: 500));
 
   await IsarService().initialize();
 
