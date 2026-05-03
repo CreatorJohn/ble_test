@@ -1,4 +1,3 @@
-import 'package:ble_test/background_service.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/router.dart';
 import 'package:ble_test/watch_log.dart';
@@ -31,13 +30,6 @@ void main() async {
   await IsarService().initialize();
 
   runApp(const ProviderScope(child: MainApp()));
-
-  // 3. Start service AFTER UI is up and permission confirmed
-  Future.delayed(const Duration(seconds: 3), () async {
-    if (await Permission.notification.isGranted) {
-      await initializeBackgroundService();
-    }
-  });
 }
 
 class MainApp extends StatelessWidget {
