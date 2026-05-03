@@ -5,10 +5,12 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   ble_peripheral
   flutter_blue_plus_winrt
+  isar_community_flutter_libs
   permission_handler_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

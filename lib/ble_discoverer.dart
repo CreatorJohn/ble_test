@@ -1,3 +1,4 @@
+/*
 import 'dart:async';
 import 'dart:io';
 
@@ -8,9 +9,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 typedef DiscoveredDevice = ({
   String remoteId,
-  List<BluetoothService> services,
+  List<String> serviceIds,
   bool hasTargetService,
-  ScanResult result,
 });
 
 class BLEDiscoverer {
@@ -159,8 +159,11 @@ class BLEDiscoverer {
       final remoteId = result.device.remoteId.toString();
 
       // Check advertisement data for the target service UUID (no connection needed)
-      final hasTarget = result.advertisementData.serviceUuids
-          .any((uuid) => uuid.toString().toLowerCase() == BLEAdvertiser.serviceUuid.toLowerCase());
+      final hasTarget = result.advertisementData.serviceUuids.any(
+        (uuid) =>
+            uuid.toString().toLowerCase() ==
+            BLEAdvertiser.serviceUuid.toLowerCase(),
+      );
 
       uniqueDevices[remoteId] = (
         remoteId: remoteId,
@@ -190,3 +193,4 @@ class BLEDiscoverer {
     await Future.delayed(const Duration(milliseconds: 500));
   }
 }
+*/
