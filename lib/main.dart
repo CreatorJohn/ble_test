@@ -30,9 +30,13 @@ void main() async {
 
   await IsarService().initialize();
 
-  await initializeBackgroundService();
-
   runApp(const ProviderScope(child: MainApp()));
+
+  // 3. Start service AFTER UI is up
+  // Long delay for Chromebook stabilization
+  Future.delayed(const Duration(seconds: 2), () async {
+    await initializeBackgroundService();
+  });
 }
 
 class MainApp extends StatelessWidget {
