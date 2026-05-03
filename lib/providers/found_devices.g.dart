@@ -1,0 +1,158 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'found_devices.dart';
+
+// **************************************************************************
+// RiverpodGenerator
+// **************************************************************************
+
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint, type=warning
+
+@ProviderFor(isarService)
+final isarServiceProvider = IsarServiceProvider._();
+
+final class IsarServiceProvider
+    extends $FunctionalProvider<IsarService, IsarService, IsarService>
+    with $Provider<IsarService> {
+  IsarServiceProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isarServiceProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$isarServiceHash();
+
+  @$internal
+  @override
+  $ProviderElement<IsarService> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  IsarService create(Ref ref) {
+    return isarService(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(IsarService value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<IsarService>(value),
+    );
+  }
+}
+
+String _$isarServiceHash() => r'48546af1c1c2e7183e454863ef0ea57e5c0996f5';
+
+@ProviderFor(isScanning)
+final isScanningProvider = IsScanningProvider._();
+
+final class IsScanningProvider
+    extends $FunctionalProvider<AsyncValue<bool>, bool, Stream<bool>>
+    with $FutureModifier<bool>, $StreamProvider<bool> {
+  IsScanningProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isScanningProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$isScanningHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<bool> $createElement($ProviderPointer pointer) =>
+      $StreamProviderElement(pointer);
+
+  @override
+  Stream<bool> create(Ref ref) {
+    return isScanning(ref);
+  }
+}
+
+String _$isScanningHash() => r'a9bd21abaed46d3c198975088eed7554068a5d0a';
+
+@ProviderFor(scanProgress)
+final scanProgressProvider = ScanProgressProvider._();
+
+final class ScanProgressProvider
+    extends $FunctionalProvider<AsyncValue<double>, double, Stream<double>>
+    with $FutureModifier<double>, $StreamProvider<double> {
+  ScanProgressProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'scanProgressProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$scanProgressHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<double> $createElement($ProviderPointer pointer) =>
+      $StreamProviderElement(pointer);
+
+  @override
+  Stream<double> create(Ref ref) {
+    return scanProgress(ref);
+  }
+}
+
+String _$scanProgressHash() => r'73ccb12b51761b0d5237586e4739003c31c65674';
+
+@ProviderFor(discoveredDevices)
+final discoveredDevicesProvider = DiscoveredDevicesProvider._();
+
+final class DiscoveredDevicesProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<FoundDevice>>,
+          List<FoundDevice>,
+          Stream<List<FoundDevice>>
+        >
+    with
+        $FutureModifier<List<FoundDevice>>,
+        $StreamProvider<List<FoundDevice>> {
+  DiscoveredDevicesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'discoveredDevicesProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$discoveredDevicesHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<List<FoundDevice>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<List<FoundDevice>> create(Ref ref) {
+    return discoveredDevices(ref);
+  }
+}
+
+String _$discoveredDevicesHash() => r'b954b70f1d3f9ca8f6697e3c24d9a4de860470ef';

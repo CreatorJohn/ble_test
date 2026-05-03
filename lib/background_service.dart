@@ -2,10 +2,9 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:isar_community/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
@@ -40,12 +39,10 @@ void onStart(ServiceInstance service) async {
   // Give the system a moment to stabilize
   await Future.delayed(const Duration(seconds: 1));
 
-  Isar? isar;
+  final isarService = IsarService();
   try {
-    final dir = await getApplicationDocumentsDirectory();
-    isar = await Isar.open([FoundDeviceSchema], directory: dir.path);
+    await isarService.initialize();
   } catch (e) {
-    // If we can't open Isar, we might as well stop or log heavily
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
         title: "BLE Test App - Error",
@@ -56,7 +53,7 @@ void onStart(ServiceInstance service) async {
   }
 
   FlutterBluePlus.scanResults.listen((results) async {
-    if (isar == null || !isar.isOpen) return;
+    if (!isarService.isOpen) return;
 
     for (final ScanResult result in results) {
       final device = FoundDevice()
@@ -68,24 +65,45 @@ void onStart(ServiceInstance service) async {
         ..lastSeen = DateTime.now();
 
       try {
-        await isar.writeTxn(() async {
-          await isar!.foundDevices.put(device);
-        });
+        await isarService.putFoundDevice(device);
       } catch (e) {
         // Log or handle write error
       }
     }
   });
 
-  Timer.periodic(const Duration(seconds: 80), (timer) async {
+  const scanDuration = Duration(seconds: 20);
+  const waitDuration = Duration(seconds: 80);
+  DateTime? scanStartTime;
+
+  // Progress emitter
+  Timer.periodic(const Duration(milliseconds: 500), (t) {
+    if (FlutterBluePlus.isScanningNow && scanStartTime != null) {
+      final elapsed = DateTime.now().difference(scanStartTime!);
+      final progress = elapsed.inMilliseconds / scanDuration.inMilliseconds;
+      service.invoke('updateProgress', {'value': progress.clamp(0.0, 1.0)});
+    } else {
+      service.invoke('updateProgress', {'value': 0.0});
+    }
+  });
+
+  // Scanning loop
+  Timer.periodic(waitDuration + scanDuration, (timer) async {
     try {
       if (await FlutterBluePlus.isSupported == false) return;
 
       if (FlutterBluePlus.isScanningNow == false) {
-        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 20));
+        scanStartTime = DateTime.now();
+        await FlutterBluePlus.startScan(timeout: scanDuration);
       }
     } catch (e) {
-      // Handle scan start error
+      scanStartTime = null;
     }
   });
+
+  // Start first scan immediately
+  if (await FlutterBluePlus.isSupported) {
+    scanStartTime = DateTime.now();
+    FlutterBluePlus.startScan(timeout: scanDuration);
+  }
 }

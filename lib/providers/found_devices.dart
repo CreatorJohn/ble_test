@@ -1,30 +1,32 @@
-/*
-import 'package:ble_test/ble_discoverer.dart';
+import 'dart:async';
+import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/isar_service.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'found_devices.g.dart';
 
-@Riverpod(keepAlive: true)
-class FoundDevicesState extends _$FoundDevicesState {
-  final BLEDiscoverer _service = BLEDiscoverer();
+@riverpod
+IsarService isarService(Ref ref) => IsarService();
 
-  @override
-  FutureOr<List<DiscoveredDevice>> build() async => [];
-
-  Future<void> discover() async {
-    state = AsyncLoading(progress: 0);
-
-    try {
-      final results = await _service.discover(
-        onProgress: (progress) => state = AsyncLoading(progress: progress),
-      );
-
-      state = AsyncData(results);
-    } catch (e) {
-      state = AsyncError(e, StackTrace.current);
-    }
-  }
-
-  Future<void> cancel() => _service.stopDiscovering();
+@riverpod
+Stream<bool> isScanning(Ref ref) {
+  return FlutterBluePlus.isScanning;
 }
-*/
+
+@riverpod
+Stream<double> scanProgress(Ref ref) {
+  final service = FlutterBackgroundService();
+  return service.on('updateProgress').map((event) {
+    final value = event?['value'];
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return 0.0;
+  });
+}
+
+@riverpod
+Stream<List<FoundDevice>> discoveredDevices(Ref ref) {
+  return ref.watch(isarServiceProvider).watchFoundDevices();
+}

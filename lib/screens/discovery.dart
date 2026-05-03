@@ -1,9 +1,8 @@
 import 'package:ble_test/components/scaffold_wrapper.dart';
 import 'package:ble_test/data/found_device.dart';
-import 'package:ble_test/main.dart';
+import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
-import 'package:isar_community/isar.dart';
 
 class DiscoveryScreen extends StatelessWidget {
   const DiscoveryScreen({super.key});
@@ -16,9 +15,7 @@ class DiscoveryScreen extends StatelessWidget {
       withLog: true,
       padding: const EdgeInsets.all(8.0),
       body: StreamBuilder<List<FoundDevice>>(
-        stream: isar.foundDevices.where().sortByLastSeenDesc().watch(
-          fireImmediately: true,
-        ),
+        stream: IsarService().watchFoundDevices(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const CircularProgressIndicator();
 
