@@ -4,10 +4,29 @@ import 'dart:ui';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
+
+  if (await service.isRunning()) return;
+
+  // Create the notification channel for Android
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'scanning_status', // id
+    'BLE Scanning Status', // title
+    description: 'This channel is used for BLE scanning status.', // description
+    importance: Importance.low,
+  );
+
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
