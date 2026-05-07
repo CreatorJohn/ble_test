@@ -1,5 +1,6 @@
 import 'package:ble_test/background_service.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
+import 'package:ble_test/components/system_health_card.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/router.dart';
@@ -17,6 +18,7 @@ class DiscoveryScreen extends StatelessWidget {
       padding: const EdgeInsets.all(8.0),
       body: Column(
         children: [
+          const SystemHealthCard(),
           ElevatedButton.icon(
             onPressed: () async {
               await initializeBackgroundService();
