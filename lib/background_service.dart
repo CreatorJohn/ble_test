@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 

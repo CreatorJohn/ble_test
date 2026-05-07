@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'system_health.g.dart';
 
 class SystemHealthState {
   final bool isBatteryOptimized;
@@ -19,18 +21,22 @@ class SystemHealthState {
     this.isChecking = false,
   });
 
-  bool get isOptimal => !isBatteryOptimized && hasLocationAlways && hasNotificationPermission;
+  bool get isOptimal =>
+      !isBatteryOptimized && hasLocationAlways && hasNotificationPermission;
 }
 
-class SystemHealthNotifier extends StateNotifier<SystemHealthState> {
-  SystemHealthNotifier() : super(SystemHealthState(
-    isBatteryOptimized: false,
-    hasLocationAlways: true,
-    hasNotificationPermission: true,
-    isXiaomi: false,
-    isChecking: true,
-  )) {
+@riverpod
+class SystemHealth extends _$SystemHealth {
+  @override
+  SystemHealthState build() {
     checkHealth();
+    return SystemHealthState(
+      isBatteryOptimized: false,
+      hasLocationAlways: true,
+      hasNotificationPermission: true,
+      isXiaomi: false,
+      isChecking: true,
+    );
   }
 
   Future<void> checkHealth() async {
@@ -47,10 +53,13 @@ class SystemHealthNotifier extends StateNotifier<SystemHealthState> {
     if (Platform.isAndroid) {
       final androidInfo = await deviceInfo.androidInfo;
       final manufacturer = androidInfo.manufacturer.toLowerCase();
-      isXiaomi = manufacturer.contains('xiaomi') || manufacturer.contains('poco') || manufacturer.contains('redmi');
+      isXiaomi = manufacturer.contains('xiaomi') ||
+          manufacturer.contains('poco') ||
+          manufacturer.contains('redmi');
     }
 
-    final isOptimized = await DisableBatteryOptimization.isBatteryOptimizationDisabled ?? false;
+    final isOptimized =
+        await DisableBatteryOptimization.isBatteryOptimizationDisabled ?? false;
     final locationStatus = await Permission.locationAlways.status;
     final notificationStatus = await Permission.notification.status;
 
@@ -63,7 +72,3 @@ class SystemHealthNotifier extends StateNotifier<SystemHealthState> {
     );
   }
 }
-
-final systemHealthProvider = StateNotifierProvider<SystemHealthNotifier, SystemHealthState>((ref) {
-  return SystemHealthNotifier();
-});
