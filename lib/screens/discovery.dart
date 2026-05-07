@@ -1,11 +1,12 @@
 import 'package:ble_test/background_service.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
 import 'package:ble_test/components/system_health_card.dart';
-import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 class DiscoveryScreen extends ConsumerWidget {
   const DiscoveryScreen({super.key});
@@ -37,14 +38,22 @@ class DiscoveryScreen extends ConsumerWidget {
                   icon: const Icon(Icons.play_arrow),
                   label: const Text("Start Background Scanner"),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () => _showResetConfirmation(context, ref),
+                  icon: const Icon(Icons.refresh),
+                  tooltip: "Reset Service & Data",
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(width: 8),
                 _StatusIndicator(isRunning: isRunning),
               ],
             ),
           ),
           if (isRunning)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 8.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32.0, vertical: 8.0),
               child: Column(
                 children: [
                   LinearProgressIndicator(value: progress),
@@ -60,7 +69,9 @@ class DiscoveryScreen extends ConsumerWidget {
           Expanded(
             child: ref.watch(discoveredDevicesProvider).when(
                   data: (devices) {
-                    if (devices.isEmpty) return const Text("No devices found...");
+                    if (devices.isEmpty) {
+                      return const Center(child: Text("No devices found..."));
+                    }
 
                     return ListView.builder(
                       itemCount: devices.length,
@@ -74,9 +85,50 @@ class DiscoveryScreen extends ConsumerWidget {
                       },
                     );
                   },
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (err, stack) => Center(child: Text('Error: $err')),
                 ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResetConfirmation(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Reset Background Service?"),
+        content: const Text(
+          "This will stop the background scanner and delete all discovered devices. This action cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              // 1. Stop the service
+              final service = FlutterBackgroundService();
+              service.invoke("stopService");
+
+              // 2. Clear the database
+              await IsarService().clearDevices();
+
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text("Service reset and data cleared")),
+                );
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text("Reset Everything"),
           ),
         ],
       ),

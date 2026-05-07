@@ -127,4 +127,8 @@ void onStart(ServiceInstance service) async {
     scanStartTime = DateTime.now();
     FlutterBluePlus.startScan(timeout: scanDuration);
   }
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
 }
