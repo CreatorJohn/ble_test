@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Android 12+ Bluetooth permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
@@ -30,7 +32,7 @@
 
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="connectedDevice|specialUse" />
+            android:foregroundServiceType="location|connectedDevice|specialUse" />
 
         <receiver
             android:name="id.flutter.flutter_background_service.WatchdogReceiver"
