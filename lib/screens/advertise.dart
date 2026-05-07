@@ -1,27 +1,28 @@
-import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
+import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class AdvertiseScreen extends ConsumerWidget {
   AdvertiseScreen({super.key});
 
-  final BLEAdvertiser _service = BLEAdvertiser();
   final TextEditingController _controller = TextEditingController.fromValue(
-    TextEditingValue(text: "BLE Test"),
+    const TextEditingValue(text: "BLE Test"),
   );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isServiceRunning = ref.watch(isServiceRunningProvider).value ?? false;
+
     return ScaffoldWrapper(
       screen: AdvertiseRoute().location,
       withLog: true,
       centered: true,
-      padding: EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        spacing: 8.0,
         children: [
           TextField(
             maxLength: 8,
@@ -30,28 +31,32 @@ class AdvertiseScreen extends ConsumerWidget {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8.0),
               ),
+              helperText: isServiceRunning
+                  ? "Update name in background"
+                  : "Start service to advertise",
             ),
           ),
-          StreamBuilder(
-            stream: _service.advertisingStatusStream,
-            builder: (context, snapshot) {
-              final advertising = snapshot.data;
-
-              if (advertising == true) {
-                return ElevatedButton(
-                  onPressed: () => _service.stopAdvertising(),
-                  child: const Text("Stop advertising"),
+          const SizedBox(height: 16),
+          if (isServiceRunning)
+            ElevatedButton.icon(
+              onPressed: () {
+                FlutterBackgroundService().invoke(
+                  "setAdvertisingName",
+                  {"name": _controller.text.trim()},
                 );
-              } else {
-                return ElevatedButton(
-                  onPressed: () => _service.startAdvertising(
-                    localName: _controller.text.trim(),
-                  ),
-                  child: const Text("Advertise"),
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Advertising name updated")),
                 );
-              }
-            },
-          ),
+              },
+              icon: const Icon(Icons.update),
+              label: const Text("Update Name"),
+            )
+          else
+            const Text(
+              "Start the Background Scanner on the Discovery screen to enable 24/7 advertising.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
         ],
       ),
     );

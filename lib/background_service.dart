@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -59,6 +60,11 @@ void onStart(ServiceInstance service) async {
 
   // Give the system a moment to stabilize
   await Future.delayed(const Duration(seconds: 1));
+
+  // Initialize and start advertising in the background isolate
+  final advertiser = BLEAdvertiser();
+  await advertiser.initialize();
+  await advertiser.startAdvertising(localName: "BLE Test");
 
   final isarService = IsarService();
   try {
@@ -128,7 +134,15 @@ void onStart(ServiceInstance service) async {
     FlutterBluePlus.startScan(timeout: scanDuration);
   }
 
-  service.on('stopService').listen((event) {
+  service.on('stopService').listen((event) async {
+    await advertiser.stopAdvertising();
     service.stopSelf();
+  });
+
+  service.on('setAdvertisingName').listen((event) {
+    final name = event?['name'];
+    if (name is String) {
+      advertiser.startAdvertising(localName: name);
+    }
   });
 }
