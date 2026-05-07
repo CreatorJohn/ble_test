@@ -83,6 +83,39 @@ final class IsScanningProvider
 
 String _$isScanningHash() => r'a9bd21abaed46d3c198975088eed7554068a5d0a';
 
+@ProviderFor(isServiceRunning)
+final isServiceRunningProvider = IsServiceRunningProvider._();
+
+final class IsServiceRunningProvider
+    extends $FunctionalProvider<AsyncValue<bool>, bool, Stream<bool>>
+    with $FutureModifier<bool>, $StreamProvider<bool> {
+  IsServiceRunningProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isServiceRunningProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$isServiceRunningHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<bool> $createElement($ProviderPointer pointer) =>
+      $StreamProviderElement(pointer);
+
+  @override
+  Stream<bool> create(Ref ref) {
+    return isServiceRunning(ref);
+  }
+}
+
+String _$isServiceRunningHash() => r'2f3234e477cfcc8713abf0179f099f0182dead13';
+
 @ProviderFor(scanProgress)
 final scanProgressProvider = ScanProgressProvider._();
 
