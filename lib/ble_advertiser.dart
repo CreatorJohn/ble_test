@@ -61,12 +61,12 @@ class BLEAdvertiser {
     }
   }
 
-  Future<bool> initialize() async {
+  Future<bool> initialize({bool ignorePermissions = false}) async {
     if (_initialized) return true;
     _initialized = true;
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
-    if (Platform.isAndroid || Platform.isIOS) {
+    if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
       final permissions = await [
         Permission.bluetoothScan,
         Permission.bluetoothAdvertise,
@@ -96,7 +96,7 @@ class BLEAdvertiser {
         return false;
       }
     } else {
-      _log.info('Skipping runtime permissions on non-mobile platform');
+      _log.info('Skipping runtime permissions');
     }
 
     // Crucial: Initialize BlePeripheral AFTER permissions are granted
@@ -112,7 +112,7 @@ class BLEAdvertiser {
       _log.severe('BlePeripheral.initialize() failed: $e');
     }
 
-    if (Platform.isAndroid || Platform.isIOS) {
+    if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
       final bluetoothOn = await _waitForBluetooth();
       if (!bluetoothOn) {
         _initialized = false;

@@ -62,8 +62,9 @@ void onStart(ServiceInstance service) async {
   await Future.delayed(const Duration(seconds: 1));
 
   // Initialize and start advertising in the background isolate
+  // Crucial: Use ignorePermissions: true because we can't show permission dialogs from background
   final advertiser = BLEAdvertiser();
-  await advertiser.initialize();
+  await advertiser.initialize(ignorePermissions: true);
   await advertiser.startAdvertising(localName: "BLE Test");
 
   final isarService = IsarService();
@@ -121,7 +122,12 @@ void onStart(ServiceInstance service) async {
 
       if (FlutterBluePlus.isScanningNow == false) {
         scanStartTime = DateTime.now();
-        await FlutterBluePlus.startScan(timeout: scanDuration);
+        // Android 14 requirements: Background scanning MUST have a service filter to work when screen is off
+        await FlutterBluePlus.startScan(
+          timeout: scanDuration,
+          withServices: [Guid(BLEAdvertiser.serviceUuid)],
+          androidScanMode: AndroidScanMode.lowPower,
+        );
       }
     } catch (e) {
       scanStartTime = null;
@@ -131,7 +137,11 @@ void onStart(ServiceInstance service) async {
   // Start first scan immediately
   if (await FlutterBluePlus.isSupported) {
     scanStartTime = DateTime.now();
-    FlutterBluePlus.startScan(timeout: scanDuration);
+    await FlutterBluePlus.startScan(
+      timeout: scanDuration,
+      withServices: [Guid(BLEAdvertiser.serviceUuid)],
+      androidScanMode: AndroidScanMode.lowPower,
+    );
   }
 
   service.on('stopService').listen((event) async {

@@ -31,9 +31,9 @@ class SystemHealth extends _$SystemHealth {
   SystemHealthState build() {
     checkHealth();
     return SystemHealthState(
-      isBatteryOptimized: false,
-      hasLocationAlways: true,
-      hasNotificationPermission: true,
+      isBatteryOptimized: true, // Pessimistic default
+      hasLocationAlways: false,
+      hasNotificationPermission: false,
       isXiaomi: false,
       isChecking: true,
     );
