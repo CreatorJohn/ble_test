@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -10,14 +9,12 @@ class SystemHealthState {
   final bool isBatteryOptimized;
   final bool hasLocationAlways;
   final bool hasNotificationPermission;
-  final bool isXiaomi;
   final bool isChecking;
 
   SystemHealthState({
     required this.isBatteryOptimized,
     required this.hasLocationAlways,
     required this.hasNotificationPermission,
-    required this.isXiaomi,
     this.isChecking = false,
   });
 
@@ -34,7 +31,6 @@ class SystemHealth extends _$SystemHealth {
       isBatteryOptimized: true, // Pessimistic default
       hasLocationAlways: false,
       hasNotificationPermission: false,
-      isXiaomi: false,
       isChecking: true,
     );
   }
@@ -44,19 +40,8 @@ class SystemHealth extends _$SystemHealth {
       isBatteryOptimized: state.isBatteryOptimized,
       hasLocationAlways: state.hasLocationAlways,
       hasNotificationPermission: state.hasNotificationPermission,
-      isXiaomi: state.isXiaomi,
       isChecking: true,
     );
-
-    final deviceInfo = DeviceInfoPlugin();
-    bool isXiaomi = false;
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfo.androidInfo;
-      final manufacturer = androidInfo.manufacturer.toLowerCase();
-      isXiaomi = manufacturer.contains('xiaomi') ||
-          manufacturer.contains('poco') ||
-          manufacturer.contains('redmi');
-    }
 
     final isOptimized =
         await DisableBatteryOptimization.isBatteryOptimizationDisabled ?? false;
@@ -67,7 +52,6 @@ class SystemHealth extends _$SystemHealth {
       isBatteryOptimized: !isOptimized,
       hasLocationAlways: locationStatus.isGranted,
       hasNotificationPermission: notificationStatus.isGranted,
-      isXiaomi: isXiaomi,
       isChecking: false,
     );
   }

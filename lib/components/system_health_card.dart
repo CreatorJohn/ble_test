@@ -55,18 +55,6 @@ class SystemHealthCard extends ConsumerWidget {
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),
-            if (health.isXiaomi)
-              _ActionItem(
-                label: "Xiaomi/Poco: Enable Autostart",
-                buttonLabel: "Settings",
-                onPressed: () async {
-                  await DisableBatteryOptimization.showEnableAutoStartSettings(
-                    "Enable Autostart", 
-                    "Please find this app and enable Autostart."
-                  );
-                  ref.read(systemHealthProvider.notifier).checkHealth();
-                },
-              ),
           ],
         ),
       ),
