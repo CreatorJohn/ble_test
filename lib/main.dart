@@ -1,4 +1,5 @@
 import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/router.dart';
 import 'package:ble_test/watch_log.dart';
 import 'package:flutter/material.dart';

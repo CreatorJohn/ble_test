@@ -3,8 +3,6 @@ import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/data/message.dart';
 import 'package:ble_test/profile_manager.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:logging/logging.dart';
 

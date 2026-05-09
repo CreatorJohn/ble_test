@@ -9,6 +9,7 @@ class FoundDevice {
   @Index(unique: true, replace: true)
   late int stableId; // The new permanent ID
 
+  @Index()
   late String remoteId; // The volatile MAC address
 
   String? name;

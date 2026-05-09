@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/profile_manager.dart';
@@ -10,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
+import 'package:isar_community/isar.dart';
 
 class BLEAdvertiser {
   static final Logger _log = Logger('BLEAdvertiser');
@@ -20,7 +23,7 @@ class BLEAdvertiser {
   static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
   static const profilePicCharUuid = '87654321-abcd-ef09-1234-567890fedcba';
   static const fullHashCharUuid = 'a1b2c3d4-e5f6-4321-8765-abcdef123456';
-  
+
   static bool _isAdvertising = false;
   static bool _initialized = false;
 
@@ -134,26 +137,27 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setWriteRequestCallback(
-        (deviceId, characteristicUuid, offset, value) async {
+        (deviceId, characteristicUuid, offset, value) {
       _log.info('Write request from $deviceId for $characteristicUuid');
       if (characteristicUuid.toLowerCase() == messageCharUuid.toLowerCase()) {
         if (value != null) {
-          // Lookup stableId from database using the MAC address
           final isar = IsarService();
           if (isar.isOpen) {
-            final device = await isar.db.foundDevices
+            // Run async logic in a fire-and-forget manner
+            isar.db.foundDevices
                 .where()
                 .remoteIdEqualTo(deviceId)
-                .findFirst();
-
-            if (device != null) {
-              MessageHandler.handleIncomingMessage(
-                senderStableId: device.stableId,
-                data: value,
-              );
-            } else {
-              _log.warning('Received message from unknown MAC: $deviceId');
-            }
+                .findFirst()
+                .then((device) {
+              if (device != null) {
+                MessageHandler.handleIncomingMessage(
+                  senderStableId: device.stableId,
+                  data: value,
+                );
+              } else {
+                _log.warning('Received message from unknown MAC: $deviceId');
+              }
+            });
           }
         }
       }
@@ -163,7 +167,7 @@ class BLEAdvertiser {
     BlePeripheral.setReadRequestCallback(
         (deviceId, characteristicUuid, offset, value) {
       _log.info('Read request from $deviceId for $characteristicUuid');
-      return null; // Return null to use the current characteristic value
+      return null;
     });
 
     return true;
@@ -199,6 +203,7 @@ class BLEAdvertiser {
 
       await Future.delayed(const Duration(seconds: 1));
 
+      final profilePic = await ProfileManager.getProfilePicture();
       final fullHash = await ProfileManager.getProfileHash();
       final stableId = await ProfileManager.getStableDeviceId();
 
@@ -244,11 +249,11 @@ class BLEAdvertiser {
         profileHash: fullHash,
       );
 
-      // Prepend scanResponseData (12 bytes) as raw bytes to the local name
       final nameBytes = Uint8List.fromList(localName.codeUnits);
       final combinedName = Uint8List(scanResponseData.length + nameBytes.length);
       combinedName.setRange(0, scanResponseData.length, scanResponseData);
-      combinedName.setRange(scanResponseData.length, combinedName.length, nameBytes);
+      combinedName.setRange(
+          scanResponseData.length, combinedName.length, nameBytes);
 
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
