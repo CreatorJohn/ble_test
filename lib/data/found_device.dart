@@ -7,7 +7,9 @@ class FoundDevice {
   Id id = Isar.autoIncrement;
 
   @Index(unique: true, replace: true)
-  late String remoteId;
+  late int stableId; // The new permanent ID
+
+  late String remoteId; // The volatile MAC address
 
   String? name;
 
@@ -19,4 +21,6 @@ class FoundDevice {
   String? profileHash;
 
   List<int>? profilePicture;
+
+  DateTime? lastPictureSync; // Time-based cache invalidation
 }
