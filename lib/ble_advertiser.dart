@@ -186,8 +186,8 @@ class BLEAdvertiser {
 
       await Future.delayed(const Duration(seconds: 1));
 
-      final profilePic = await ProfileManager.getProfilePicture();
       final fullHash = await ProfileManager.getProfileHash();
+      final stableId = await ProfileManager.getStableDeviceId();
 
       await BlePeripheral.addService(
         BleService(
@@ -218,24 +218,29 @@ class BLEAdvertiser {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
-      final manufacturerData = MeshPacketEncoder.encodeManufacturerData(
-        latitude: latitude,
-        longitude: longitude,
+      final manufacturerData = MeshPacketEncoder.encodeMainPacket(
+        stableId: stableId,
+        profileHash: fullHash,
         isIOS: Platform.isIOS,
         isOnline: isOnline,
+      );
+
+      final scanResponseData = MeshPacketEncoder.encodeScanResponseData(
+        latitude: latitude,
+        longitude: longitude,
         profileHash: fullHash,
       );
 
-      // Prepare Scan Response Data (Full Hash + Local Name)
+      // Prepend scanResponseData (12 bytes) as raw bytes to the local name
       final nameBytes = Uint8List.fromList(localName.codeUnits);
-      final combinedScanResponse = Uint8List(fullHash.length + nameBytes.length);
-      combinedScanResponse.setRange(0, fullHash.length, fullHash);
-      combinedScanResponse.setRange(fullHash.length, combinedScanResponse.length, nameBytes);
+      final combinedName = Uint8List(scanResponseData.length + nameBytes.length);
+      combinedName.setRange(0, scanResponseData.length, scanResponseData);
+      combinedName.setRange(scanResponseData.length, combinedName.length, nameBytes);
 
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
-        localName: String.fromCharCodes(combinedScanResponse),
+        localName: String.fromCharCodes(combinedName),
         manufacturerData: ManufacturerData(
           manufacturerId: 0xFFFF,
           data: manufacturerData,

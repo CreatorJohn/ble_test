@@ -21,39 +21,52 @@ class MeshPacketEncoder {
     return (encoded / max24 * range) + min;
   }
 
-  static Uint8List encodeManufacturerData({
-    required double latitude,
-    required double longitude,
+  static Uint8List encodeMainPacket({
+    required int stableId,
+    required Uint8List profileHash,
     required bool isIOS,
     required bool isOnline,
+  }) {
+    final data = Uint8List(6);
+    final buffer = ByteData.view(data.buffer);
+
+    // Stable ID (4 bytes / 32 bits)
+    buffer.setUint32(0, stableId, Endian.big);
+
+    // Profile Hash Prefix (14 bits) + Flags (2 bits) into remaining 2 bytes
+    // Read first 2 bytes of hash
+    int hashPrefix = (profileHash[0] << 8 | profileHash[1]) >> 2; // Keep top 14 bits
+
+    int flags = 0;
+    if (isIOS) flags |= 0x02;
+    if (isOnline) flags |= 0x01;
+
+    int finalTwoBytes = (hashPrefix << 2) | flags;
+    buffer.setUint16(4, finalTwoBytes, Endian.big);
+
+    return data;
+  }
+
+  static Uint8List encodeScanResponseData({
+    required double latitude,
+    required double longitude,
     required Uint8List profileHash,
   }) {
     final lat24 = encodeCoordinate(latitude, true);
     final lon24 = encodeCoordinate(longitude, false);
 
-    final data = Uint8List(9);
-
-    // Lat (3 bytes)
+    final data = Uint8List(12);
+    // Lat (3) + Lon (3)
     data[0] = (lat24 >> 16) & 0xFF;
     data[1] = (lat24 >> 8) & 0xFF;
     data[2] = lat24 & 0xFF;
 
-    // Lon (3 bytes)
     data[3] = (lon24 >> 16) & 0xFF;
     data[4] = (lon24 >> 8) & 0xFF;
     data[5] = lon24 & 0xFF;
 
-    // Short Hash (2 bytes) - First 2 bytes of the full 6-byte hash
-    data[6] = profileHash[0];
-    data[7] = profileHash[1];
-
-    // Flags (1 byte)
-    // Bit 0: isIOS
-    // Bit 1: isOnline
-    int flags = 0;
-    if (isIOS) flags |= 0x01;
-    if (isOnline) flags |= 0x02;
-    data[8] = flags;
+    // Full Hash (6)
+    data.setRange(6, 12, profileHash);
 
     return data;
   }
