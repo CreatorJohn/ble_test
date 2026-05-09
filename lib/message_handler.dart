@@ -37,7 +37,8 @@ class MessageHandler {
         ..senderId = senderId
         ..receiverId = receiverId
         ..content = content
-        ..timestamp = DateTime.now();
+        ..timestamp = DateTime.now()
+        ..isReceived = true;
 
       await IsarService().putMessage(message);
       _log.info('Received message from $senderId: $content');
@@ -56,7 +57,8 @@ class MessageHandler {
       ..senderId = senderId
       ..receiverId = receiverId
       ..content = content
-      ..timestamp = DateTime.now();
+      ..timestamp = DateTime.now()
+      ..isReceived = false;
 
     await IsarService().putMessage(message);
     _log.info('Sent message to $receiverId: $content');

@@ -10,4 +10,6 @@ class Message {
   late String receiverId;
   late String content;
   late DateTime timestamp;
+
+  late bool isReceived;
 }

@@ -1,4 +1,5 @@
 import 'package:ble_test/components/scaffold_wrapper.dart';
+import 'package:ble_test/providers/advertising_name.dart';
 import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,18 @@ class AdvertiseScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isServiceRunning = ref.watch(isServiceRunningProvider).value ?? false;
+
+    ref.listen(advertisingNameProvider, (previous, next) {
+      if (next.hasError || !next.hasValue) return;
+
+      if (next.requireValue != _controller.text) {
+        _controller.text = next.requireValue;
+      }
+
+      FlutterBackgroundService().invoke("setAdvertisingName", {
+        "name": _controller.text.trim(),
+      });
+    });
 
     return ScaffoldWrapper(
       screen: AdvertiseRoute().location,
@@ -40,10 +53,9 @@ class AdvertiseScreen extends ConsumerWidget {
           if (isServiceRunning)
             ElevatedButton.icon(
               onPressed: () {
-                FlutterBackgroundService().invoke(
-                  "setAdvertisingName",
-                  {"name": _controller.text.trim()},
-                );
+                ref
+                    .read(advertisingNameProvider.notifier)
+                    .change(_controller.text.trim());
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Advertising name updated")),
                 );

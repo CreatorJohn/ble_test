@@ -26,17 +26,17 @@ class MessagesScreen extends ConsumerWidget {
             itemCount: messages.length,
             itemBuilder: (context, index) {
               final msg = messages[index];
-              final isOutgoing = msg.senderId != msg.receiverId; // Simplified logic
+              final isReceived = msg.isReceived;
 
               return ListTile(
                 title: Text(msg.content),
                 subtitle: Text(
-                  "${DateFormat('HH:mm:ss').format(msg.timestamp)} - ${isOutgoing ? 'To: ${msg.receiverId}' : 'From: ${msg.senderId}'}",
+                  "${DateFormat('HH:mm:ss').format(msg.timestamp)} - ${isReceived ? 'From: ${msg.senderId}' : 'To: ${msg.receiverId}'}",
                   style: const TextStyle(fontSize: 10),
                 ),
                 leading: Icon(
-                  isOutgoing ? Icons.call_made : Icons.call_received,
-                  color: isOutgoing ? Colors.blue : Colors.green,
+                  isReceived ? Icons.call_received : Icons.call_made,
+                  color: isReceived ? Colors.green : Colors.blue,
                 ),
               );
             },

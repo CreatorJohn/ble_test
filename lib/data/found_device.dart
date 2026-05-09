@@ -14,4 +14,9 @@ class FoundDevice {
   late int rssi;
 
   late DateTime lastSeen;
+
+  @Index()
+  String? profileHash;
+
+  List<int>? profilePicture;
 }

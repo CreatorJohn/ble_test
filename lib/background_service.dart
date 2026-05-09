@@ -7,6 +7,8 @@ import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:isar_community/isar.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
@@ -61,11 +63,37 @@ void onStart(ServiceInstance service) async {
   // Give the system a moment to stabilize
   await Future.delayed(const Duration(seconds: 1));
 
-  // Initialize and start advertising in the background isolate
-  // Crucial: Use ignorePermissions: true because we can't show permission dialogs from background
   final advertiser = BLEAdvertiser();
   await advertiser.initialize(ignorePermissions: true);
-  await advertiser.startAdvertising(localName: "BLE Test");
+
+  String currentName = "BLE Test";
+  double currentLat = 0.0;
+  double currentLon = 0.0;
+  bool isOnline = false;
+
+  Future<void> updateAd() async {
+    await advertiser.startAdvertising(
+      localName: currentName,
+      latitude: currentLat,
+      longitude: currentLon,
+      isOnline: isOnline,
+    );
+  }
+
+  // Initial Ad
+  await updateAd();
+
+  // Location tracking
+  Geolocator.getPositionStream(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5, // Update every 5 meters
+    ),
+  ).listen((Position position) {
+    currentLat = position.latitude;
+    currentLon = position.longitude;
+    updateAd();
+  });
 
   final isarService = IsarService();
   try {
@@ -84,18 +112,41 @@ void onStart(ServiceInstance service) async {
     if (!isarService.isOpen) return;
 
     for (final ScanResult result in results) {
+      final advData = result.advertisementData;
+      String? discoveredHash;
+
+      // Extract 6-byte hash from the start of the localName
+      if (advData.advName.length >= 6) {
+        discoveredHash = advData.advName.substring(0, 6);
+      }
+
       final device = FoundDevice()
         ..remoteId = result.device.remoteId.toString()
-        ..name = result.device.platformName.isNotEmpty
-            ? result.device.platformName
-            : "Unknown device"
+        ..name = advData.advName.length > 6
+            ? advData.advName.substring(6)
+            : (advData.advName.isNotEmpty ? advData.advName : "Unknown device")
         ..rssi = result.rssi
-        ..lastSeen = DateTime.now();
+        ..lastSeen = DateTime.now()
+        ..profileHash = discoveredHash;
 
       try {
+        // 1. Get existing device to check if hash changed
+        final existing = await isarService.db.foundDevices
+            .where()
+            .remoteIdEqualTo(device.remoteId)
+            .findFirst();
+
+        if (existing != null && existing.profileHash != discoveredHash) {
+          // 2. Hash changed! Fetch new profile picture
+          _fetchProfilePicture(result.device, isarService);
+        } else if (existing == null && discoveredHash != null) {
+          // 3. New device! Fetch initial profile picture
+          _fetchProfilePicture(result.device, isarService);
+        }
+
         await isarService.putFoundDevice(device);
       } catch (e) {
-        // Log or handle write error
+        // Log error
       }
     }
   });
@@ -118,11 +169,12 @@ void onStart(ServiceInstance service) async {
   // Scanning loop
   Timer.periodic(waitDuration + scanDuration, (timer) async {
     try {
+      service.invoke("updateAdvertisingName", {"name": currentName});
+
       if (await FlutterBluePlus.isSupported == false) return;
 
       if (FlutterBluePlus.isScanningNow == false) {
         scanStartTime = DateTime.now();
-        // Android 14 requirements: Background scanning MUST have a service filter to work when screen is off
         await FlutterBluePlus.startScan(
           timeout: scanDuration,
           withServices: [Guid(BLEAdvertiser.serviceUuid)],
@@ -152,7 +204,56 @@ void onStart(ServiceInstance service) async {
   service.on('setAdvertisingName').listen((event) {
     final name = event?['name'];
     if (name is String) {
-      advertiser.startAdvertising(localName: name);
+      currentName = name;
+      updateAd();
     }
   });
+
+  service.on('setOnlineStatus').listen((event) {
+    final status = event?['isOnline'];
+    if (status is bool) {
+      isOnline = status;
+      updateAd();
+    }
+  });
+}
+
+Future<void> _fetchProfilePicture(
+    BluetoothDevice device, IsarService isar) async {
+  try {
+    await device.connect(timeout: const Duration(seconds: 5), license: License.free);
+    final services = await device.discoverServices();
+    BluetoothCharacteristic? picChar;
+
+    for (final s in services) {
+      if (s.uuid.toString().toLowerCase() ==
+          BLEAdvertiser.serviceUuid.toLowerCase()) {
+        for (final c in s.characteristics) {
+          if (c.uuid.toString().toLowerCase() ==
+              BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
+            picChar = c;
+            break;
+          }
+        }
+      }
+    }
+
+    if (picChar != null) {
+      final value = await picChar.read();
+      if (value.isNotEmpty) {
+        final existing = await isar.db.foundDevices
+            .where()
+            .remoteIdEqualTo(device.remoteId.toString())
+            .findFirst();
+        if (existing != null) {
+          existing.profilePicture = value;
+          await isar.putFoundDevice(existing);
+        }
+      }
+    }
+  } catch (e) {
+    // Silent fail
+  } finally {
+    await device.disconnect();
+  }
 }

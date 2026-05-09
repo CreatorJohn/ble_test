@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';
+import 'package:ble_test/profile_manager.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
@@ -16,6 +18,9 @@ class BLEAdvertiser {
       StreamController.broadcast();
   static const serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
   static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
+  static const profilePicCharUuid = '87654321-abcd-ef09-1234-567890fedcba';
+  static const fullHashCharUuid = 'a1b2c3d4-e5f6-4321-8765-abcdef123456';
+  
   static bool _isAdvertising = false;
   static bool _initialized = false;
 
@@ -26,7 +31,6 @@ class BLEAdvertiser {
   Future<bool> _waitForBluetooth() async {
     _log.info("Checking the bluetooth...");
 
-    // Wait for first valid state
     BluetoothAdapterState state = await FlutterBluePlus.adapterState
         .firstWhere((s) => s != BluetoothAdapterState.unknown)
         .timeout(
@@ -48,7 +52,6 @@ class BLEAdvertiser {
       }
     }
 
-    // Wait for ON state
     try {
       await FlutterBluePlus.adapterState
           .where((s) => s == BluetoothAdapterState.on)
@@ -84,8 +87,6 @@ class BLEAdvertiser {
           _log.warning(
             'Permission ${permission.key} denied/permanently denied',
           );
-          // On Android 16, location might be denied but BLE might still work if neverForLocation is set,
-          // but we'll log it as a warning. We only fail on the core BT permissions.
           if (permission.key != Permission.location &&
               permission.key != Permission.locationWhenInUse) {
             failed = true;
@@ -98,11 +99,8 @@ class BLEAdvertiser {
         _initialized = false;
         return false;
       }
-    } else {
-      _log.info('Skipping runtime permissions');
     }
 
-    // Crucial: Initialize BlePeripheral AFTER permissions are granted
     try {
       if (Platform.isAndroid ||
           Platform.isIOS ||
@@ -122,8 +120,6 @@ class BLEAdvertiser {
         return false;
       }
     }
-
-    _log.fine('All required permissions granted and bluetooth running');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
       _log.info('Advertising status updated: isAdvertising=$isAdvertising');
@@ -151,7 +147,13 @@ class BLEAdvertiser {
       return WriteRequestResult();
     });
 
-    return true; // No error
+    BlePeripheral.setReadRequestCallback(
+        (deviceId, characteristicUuid, offset, value) {
+      _log.info('Read request from $deviceId for $characteristicUuid');
+      return null; // Return null to use the current characteristic value
+    });
+
+    return true;
   }
 
   Stream<bool> get advertisingStatusStream =>
@@ -159,10 +161,14 @@ class BLEAdvertiser {
 
   bool get isAdvetising => _isAdvertising;
 
-  Future<void> startAdvertising({required String localName}) async {
+  Future<void> startAdvertising({
+    required String localName,
+    double latitude = 0.0,
+    double longitude = 0.0,
+    bool isOnline = false,
+  }) async {
     try {
       if (_initialized == false) {
-        _log.warning('BLEAdvertiser not initialized, initializing now');
         bool success = await initialize();
         if (!success) return;
       }
@@ -170,7 +176,6 @@ class BLEAdvertiser {
       final bluetoothOn = await _waitForBluetooth();
       if (!bluetoothOn) return;
 
-      // Android 16/HyperOS safety: Reset the stack first
       _log.info('Resetting BLE stack before starting...');
       try {
         await BlePeripheral.stopAdvertising();
@@ -179,10 +184,11 @@ class BLEAdvertiser {
         _log.fine('Clean reset ignored: $e');
       }
 
-      // Crucial delay for Android 16 GATT stability
       await Future.delayed(const Duration(seconds: 1));
 
-      _log.info('Adding BLE messaging service...');
+      final profilePic = await ProfileManager.getProfilePicture();
+      final fullHash = await ProfileManager.getProfileHash();
+
       await BlePeripheral.addService(
         BleService(
           uuid: serviceUuid,
@@ -194,40 +200,57 @@ class BLEAdvertiser {
               permissions: [AttributePermissions.writeable.index],
               properties: [CharacteristicProperties.write.index],
             ),
+            BleCharacteristic(
+              uuid: profilePicCharUuid,
+              value: profilePic ?? Uint8List.fromList([]),
+              permissions: [AttributePermissions.readable.index],
+              properties: [CharacteristicProperties.read.index],
+            ),
+            BleCharacteristic(
+              uuid: fullHashCharUuid,
+              value: fullHash,
+              permissions: [AttributePermissions.readable.index],
+              properties: [CharacteristicProperties.read.index],
+            ),
           ],
         ),
       );
 
-      // Short breathing room after adding service
       await Future.delayed(const Duration(milliseconds: 500));
 
-      _log.info('Starting BLE advertising with local name: $localName');
+      final manufacturerData = MeshPacketEncoder.encodeManufacturerData(
+        latitude: latitude,
+        longitude: longitude,
+        isIOS: Platform.isIOS,
+        isOnline: isOnline,
+        profileHash: fullHash,
+      );
+
+      // Prepare Scan Response Data (Full Hash + Local Name)
+      final nameBytes = Uint8List.fromList(localName.codeUnits);
+      final combinedScanResponse = Uint8List(fullHash.length + nameBytes.length);
+      combinedScanResponse.setRange(0, fullHash.length, fullHash);
+      combinedScanResponse.setRange(fullHash.length, combinedScanResponse.length, nameBytes);
+
+      _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
-        localName: localName,
+        localName: String.fromCharCodes(combinedScanResponse),
+        manufacturerData: ManufacturerData(
+          manufacturerId: 0xFFFF,
+          data: manufacturerData,
+        ),
       );
     } catch (e) {
       _log.severe('Failed to start advertising: $e');
-      // Attempt to cleanup on failure
       await BlePeripheral.stopAdvertising();
     }
   }
 
   Future<void> stopAdvertising() async {
     try {
-      if (!_initialized) {
-        _log.warning('BLEAdvertiser not initialized, nothing to stop');
-        return;
-      }
-
-      if (await BlePeripheral.isAdvertising() != true) {
-        _log.warning('Not currently advertising, nothing to stop');
-        return;
-      }
-
+      if (!_initialized) return;
       await BlePeripheral.stopAdvertising();
-
-      // Ensure stop completes
       await Future.delayed(const Duration(milliseconds: 500));
     } catch (e) {
       _log.severe(e);

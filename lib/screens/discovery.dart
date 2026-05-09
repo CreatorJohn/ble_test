@@ -83,7 +83,41 @@ class DiscoveryScreen extends ConsumerWidget {
                       itemBuilder: (context, index) {
                         final item = devices[index];
                         return ListTile(
-                          title: Text(item.name ?? "Unknown"),
+                          title: Row(
+                            children: [
+                              Text(item.name ?? "Unknown"),
+                              const SizedBox(width: 8),
+                              StreamBuilder<BluetoothConnectionState>(
+                                stream: BluetoothDevice.fromId(item.remoteId)
+                                    .connectionState,
+                                builder: (context, snapshot) {
+                                  final state = snapshot.data ??
+                                      BluetoothConnectionState.disconnected;
+                                  if (state == BluetoothConnectionState.connected) {
+                                    return const Badge(
+                                      label: Text("CONNECTED"),
+                                      backgroundColor: Colors.green,
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                              const SizedBox(width: 4),
+                              StreamBuilder<BluetoothBondState>(
+                                stream: BluetoothDevice.fromId(item.remoteId).bondState,
+                                builder: (context, snapshot) {
+                                  final state = snapshot.data ?? BluetoothBondState.none;
+                                  if (state == BluetoothBondState.bonded) {
+                                    return const Badge(
+                                      label: Text("BONDED"),
+                                      backgroundColor: Colors.blue,
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ],
+                          ),
                           subtitle: Text(item.remoteId),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,

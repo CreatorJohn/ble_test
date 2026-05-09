@@ -23,12 +23,22 @@ const FoundDeviceSchema = CollectionSchema(
       type: IsarType.dateTime,
     ),
     r'name': PropertySchema(id: 1, name: r'name', type: IsarType.string),
-    r'remoteId': PropertySchema(
+    r'profileHash': PropertySchema(
       id: 2,
+      name: r'profileHash',
+      type: IsarType.string,
+    ),
+    r'profilePicture': PropertySchema(
+      id: 3,
+      name: r'profilePicture',
+      type: IsarType.longList,
+    ),
+    r'remoteId': PropertySchema(
+      id: 4,
       name: r'remoteId',
       type: IsarType.string,
     ),
-    r'rssi': PropertySchema(id: 3, name: r'rssi', type: IsarType.long),
+    r'rssi': PropertySchema(id: 5, name: r'rssi', type: IsarType.long),
   },
 
   estimateSize: _foundDeviceEstimateSize,
@@ -45,6 +55,19 @@ const FoundDeviceSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'remoteId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+      ],
+    ),
+    r'profileHash': IndexSchema(
+      id: 4173175201119785314,
+      name: r'profileHash',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'profileHash',
           type: IndexType.hash,
           caseSensitive: true,
         ),
@@ -72,6 +95,18 @@ int _foundDeviceEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  {
+    final value = object.profileHash;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.profilePicture;
+    if (value != null) {
+      bytesCount += 3 + value.length * 8;
+    }
+  }
   bytesCount += 3 + object.remoteId.length * 3;
   return bytesCount;
 }
@@ -84,8 +119,10 @@ void _foundDeviceSerialize(
 ) {
   writer.writeDateTime(offsets[0], object.lastSeen);
   writer.writeString(offsets[1], object.name);
-  writer.writeString(offsets[2], object.remoteId);
-  writer.writeLong(offsets[3], object.rssi);
+  writer.writeString(offsets[2], object.profileHash);
+  writer.writeLongList(offsets[3], object.profilePicture);
+  writer.writeString(offsets[4], object.remoteId);
+  writer.writeLong(offsets[5], object.rssi);
 }
 
 FoundDevice _foundDeviceDeserialize(
@@ -98,8 +135,10 @@ FoundDevice _foundDeviceDeserialize(
   object.id = id;
   object.lastSeen = reader.readDateTime(offsets[0]);
   object.name = reader.readStringOrNull(offsets[1]);
-  object.remoteId = reader.readString(offsets[2]);
-  object.rssi = reader.readLong(offsets[3]);
+  object.profileHash = reader.readStringOrNull(offsets[2]);
+  object.profilePicture = reader.readLongList(offsets[3]);
+  object.remoteId = reader.readString(offsets[4]);
+  object.rssi = reader.readLong(offsets[5]);
   return object;
 }
 
@@ -115,8 +154,12 @@ P _foundDeviceDeserializeProp<P>(
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
+      return (reader.readLongList(offset)) as P;
+    case 4:
+      return (reader.readString(offset)) as P;
+    case 5:
       return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -324,6 +367,85 @@ extension FoundDeviceQueryWhere
                 indexName: r'remoteId',
                 lower: [],
                 upper: [remoteId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause>
+  profileHashIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'profileHash', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause>
+  profileHashIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'profileHash',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> profileHashEqualTo(
+    String? profileHash,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(
+          indexName: r'profileHash',
+          value: [profileHash],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause>
+  profileHashNotEqualTo(String? profileHash) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'profileHash',
+                lower: [],
+                upper: [profileHash],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'profileHash',
+                lower: [profileHash],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'profileHash',
+                lower: [profileHash],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'profileHash',
+                lower: [],
+                upper: [profileHash],
                 includeUpper: false,
               ),
             );
@@ -612,6 +734,291 @@ extension FoundDeviceQueryFilter
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'profileHash'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'profileHash'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'profileHash',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'profileHash',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'profileHash',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'profileHash', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profileHashIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'profileHash', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'profilePicture'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'profilePicture'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureElementEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'profilePicture', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureElementGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'profilePicture',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureElementLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'profilePicture',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureElementBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'profilePicture',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureLengthEqualTo(int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'profilePicture', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'profilePicture', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'profilePicture', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureLengthLessThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'profilePicture', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'profilePicture', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  profilePictureLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'profilePicture',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
+      );
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> remoteIdEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -848,6 +1255,18 @@ extension FoundDeviceQuerySortBy
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByProfileHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'profileHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByProfileHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'profileHash', Sort.desc);
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByRemoteId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'remoteId', Sort.asc);
@@ -911,6 +1330,18 @@ extension FoundDeviceQuerySortThenBy
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByProfileHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'profileHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByProfileHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'profileHash', Sort.desc);
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByRemoteId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'remoteId', Sort.asc);
@@ -952,6 +1383,20 @@ extension FoundDeviceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByProfileHash({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'profileHash', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByProfilePicture() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'profilePicture');
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByRemoteId({
     bool caseSensitive = true,
   }) {
@@ -984,6 +1429,19 @@ extension FoundDeviceQueryProperty
   QueryBuilder<FoundDevice, String?, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<FoundDevice, String?, QQueryOperations> profileHashProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'profileHash');
+    });
+  }
+
+  QueryBuilder<FoundDevice, List<int>?, QQueryOperations>
+  profilePictureProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'profilePicture');
     });
   }
 

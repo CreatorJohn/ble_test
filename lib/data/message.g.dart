@@ -18,18 +18,23 @@ const MessageSchema = CollectionSchema(
   id: 2463283977299753079,
   properties: {
     r'content': PropertySchema(id: 0, name: r'content', type: IsarType.string),
-    r'receiverId': PropertySchema(
+    r'isReceived': PropertySchema(
       id: 1,
+      name: r'isReceived',
+      type: IsarType.bool,
+    ),
+    r'receiverId': PropertySchema(
+      id: 2,
       name: r'receiverId',
       type: IsarType.string,
     ),
     r'senderId': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
@@ -69,9 +74,10 @@ void _messageSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.content);
-  writer.writeString(offsets[1], object.receiverId);
-  writer.writeString(offsets[2], object.senderId);
-  writer.writeDateTime(offsets[3], object.timestamp);
+  writer.writeBool(offsets[1], object.isReceived);
+  writer.writeString(offsets[2], object.receiverId);
+  writer.writeString(offsets[3], object.senderId);
+  writer.writeDateTime(offsets[4], object.timestamp);
 }
 
 Message _messageDeserialize(
@@ -83,9 +89,10 @@ Message _messageDeserialize(
   final object = Message();
   object.content = reader.readString(offsets[0]);
   object.id = id;
-  object.receiverId = reader.readString(offsets[1]);
-  object.senderId = reader.readString(offsets[2]);
-  object.timestamp = reader.readDateTime(offsets[3]);
+  object.isReceived = reader.readBool(offsets[1]);
+  object.receiverId = reader.readString(offsets[2]);
+  object.senderId = reader.readString(offsets[3]);
+  object.timestamp = reader.readDateTime(offsets[4]);
   return object;
 }
 
@@ -99,10 +106,12 @@ P _messageDeserializeProp<P>(
     case 0:
       return (reader.readString(offset)) as P;
     case 1:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 2:
       return (reader.readString(offset)) as P;
     case 3:
+      return (reader.readString(offset)) as P;
+    case 4:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -400,6 +409,16 @@ extension MessageQueryFilter
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> isReceivedEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isReceived', value: value),
       );
     });
   }
@@ -775,6 +794,18 @@ extension MessageQuerySortBy on QueryBuilder<Message, Message, QSortBy> {
     });
   }
 
+  QueryBuilder<Message, Message, QAfterSortBy> sortByIsReceived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReceived', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByIsReceivedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReceived', Sort.desc);
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterSortBy> sortByReceiverId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'receiverId', Sort.asc);
@@ -838,6 +869,18 @@ extension MessageQuerySortThenBy
     });
   }
 
+  QueryBuilder<Message, Message, QAfterSortBy> thenByIsReceived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReceived', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> thenByIsReceivedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReceived', Sort.desc);
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterSortBy> thenByReceiverId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'receiverId', Sort.asc);
@@ -885,6 +928,12 @@ extension MessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Message, Message, QDistinct> distinctByIsReceived() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isReceived');
+    });
+  }
+
   QueryBuilder<Message, Message, QDistinct> distinctByReceiverId({
     bool caseSensitive = true,
   }) {
@@ -919,6 +968,12 @@ extension MessageQueryProperty
   QueryBuilder<Message, String, QQueryOperations> contentProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'content');
+    });
+  }
+
+  QueryBuilder<Message, bool, QQueryOperations> isReceivedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isReceived');
     });
   }
 

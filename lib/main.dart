@@ -2,6 +2,7 @@ import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/router.dart';
 import 'package:ble_test/watch_log.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -32,8 +33,40 @@ void main() async {
   runApp(const ProviderScope(child: MainApp()));
 }
 
-class MainApp extends StatelessWidget {
+class MainApp extends StatefulWidget {
   const MainApp({super.key});
+
+  @override
+  State<MainApp> createState() => _MainAppState();
+}
+
+class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Use delay to ensure service is ready to receive event
+    Future.delayed(const Duration(seconds: 1), () => _setOnlineStatus(true));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _setOnlineStatus(true);
+    } else {
+      _setOnlineStatus(false);
+    }
+  }
+
+  void _setOnlineStatus(bool isOnline) {
+    FlutterBackgroundService().invoke("setOnlineStatus", {"isOnline": isOnline});
+  }
 
   @override
   Widget build(BuildContext context) {
