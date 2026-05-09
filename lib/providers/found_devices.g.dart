@@ -189,3 +189,42 @@ final class DiscoveredDevicesProvider
 }
 
 String _$discoveredDevicesHash() => r'b954b70f1d3f9ca8f6697e3c24d9a4de860470ef';
+
+@ProviderFor(messages)
+final messagesProvider = MessagesProvider._();
+
+final class MessagesProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<Message>>,
+          List<Message>,
+          Stream<List<Message>>
+        >
+    with $FutureModifier<List<Message>>, $StreamProvider<List<Message>> {
+  MessagesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'messagesProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$messagesHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<List<Message>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<List<Message>> create(Ref ref) {
+    return messages(ref);
+  }
+}
+
+String _$messagesHash() => r'692355e034e57ca435ef255c9ca7b9faa24a4198';

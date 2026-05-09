@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';

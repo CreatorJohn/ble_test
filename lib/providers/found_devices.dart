@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/message.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -35,4 +36,9 @@ Stream<double> scanProgress(Ref ref) {
 @riverpod
 Stream<List<FoundDevice>> discoveredDevices(Ref ref) {
   return ref.watch(isarServiceProvider).watchFoundDevices();
+}
+
+@riverpod
+Stream<List<Message>> messages(Ref ref) {
+  return ref.watch(isarServiceProvider).watchMessages();
 }

@@ -1,6 +1,7 @@
 import 'package:ble_test/screens/advertise.dart';
 import 'package:ble_test/screens/discovery.dart';
 import 'package:ble_test/screens/home.dart';
+import 'package:ble_test/screens/messages.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -33,6 +34,16 @@ class DiscoveryRoute extends GoRouteData with $DiscoveryRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) {
     return DiscoveryScreen();
+  }
+}
+
+@TypedGoRoute<MessagesRoute>(path: "/messages")
+class MessagesRoute extends GoRouteData with $MessagesRoute {
+  const MessagesRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return const MessagesScreen();
   }
 }
 

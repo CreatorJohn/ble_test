@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:ble_test/message_handler.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
@@ -12,7 +14,8 @@ class BLEAdvertiser {
   static final BLEAdvertiser _instance = BLEAdvertiser._internal();
   static final StreamController<bool> _advertisingStatusController =
       StreamController.broadcast();
-  static final serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
+  static const serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
+  static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
   static bool _isAdvertising = false;
   static bool _initialized = false;
 
@@ -134,6 +137,20 @@ class BLEAdvertiser {
       }
     });
 
+    BlePeripheral.setWriteRequestCallback(
+        (deviceId, characteristicUuid, offset, value) {
+      _log.info('Write request from $deviceId for $characteristicUuid');
+      if (characteristicUuid.toLowerCase() == messageCharUuid.toLowerCase()) {
+        if (value != null) {
+          MessageHandler.handleIncomingMessage(
+            senderId: deviceId,
+            data: value,
+          );
+        }
+      }
+      return WriteRequestResult();
+    });
+
     return true; // No error
   }
 
@@ -162,26 +179,24 @@ class BLEAdvertiser {
         _log.fine('Clean reset ignored: $e');
       }
 
-      /*
       // Crucial delay for Android 16 GATT stability
       await Future.delayed(const Duration(seconds: 1));
 
-      _log.info('Adding BLE service...');
+      _log.info('Adding BLE messaging service...');
       await BlePeripheral.addService(
         BleService(
           uuid: serviceUuid,
           primary: true,
           characteristics: [
             BleCharacteristic(
-              uuid: '12345678-90ab-cdef-1234-567890abcdef',
-              value: Uint8List.fromList([0x01, 0x02, 0x03]),
-              permissions: [AttributePermissions.readable.index],
-              properties: [CharacteristicProperties.read.index],
+              uuid: messageCharUuid,
+              value: Uint8List.fromList([0x00]),
+              permissions: [AttributePermissions.writeable.index],
+              properties: [CharacteristicProperties.write.index],
             ),
           ],
         ),
       );
-      */
 
       // Short breathing room after adding service
       await Future.delayed(const Duration(milliseconds: 500));

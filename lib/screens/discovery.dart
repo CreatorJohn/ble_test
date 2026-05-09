@@ -1,10 +1,15 @@
+import 'dart:convert';
 import 'package:ble_test/background_service.dart';
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
 import 'package:ble_test/components/system_health_card.dart';
+import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
@@ -80,7 +85,17 @@ class DiscoveryScreen extends ConsumerWidget {
                         return ListTile(
                           title: Text(item.name ?? "Unknown"),
                           subtitle: Text(item.remoteId),
-                          trailing: Text("${item.rssi} dBm"),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text("${item.rssi} dBm"),
+                              IconButton(
+                                icon: const Icon(Icons.send),
+                                onPressed: () =>
+                                    _sendMessageDialog(context, ref, item),
+                              ),
+                            ],
+                          ),
                         );
                       },
                     );
@@ -93,6 +108,90 @@ class DiscoveryScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _sendMessageDialog(
+      BuildContext context, WidgetRef ref, FoundDevice device) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Message to ${device.name ?? 'Device'}"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "Enter message"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              final content = controller.text.trim();
+              if (content.isEmpty) return;
+
+              Navigator.pop(context);
+              _performSendMessage(context, device, content);
+            },
+            child: const Text("Send"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performSendMessage(
+      BuildContext context, FoundDevice device, String content) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    try {
+      final bleDevice = BluetoothDevice.fromId(device.remoteId);
+
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text("Connecting to ${device.name ?? 'device'}...")),
+      );
+
+      await bleDevice.connect(license: License.free);
+
+      try {
+        final services = await bleDevice.discoverServices();
+        BluetoothCharacteristic? messageChar;
+
+        for (final service in services) {
+          if (service.uuid.toString().toLowerCase() ==
+              BLEAdvertiser.serviceUuid.toLowerCase()) {
+            for (final char in service.characteristics) {
+              if (char.uuid.toString().toLowerCase() ==
+                  BLEAdvertiser.messageCharUuid.toLowerCase()) {
+                messageChar = char;
+                break;
+              }
+            }
+          }
+        }
+
+        if (messageChar != null) {
+          await messageChar.write(utf8.encode(content));
+          await MessageHandler.handleOutgoingMessage(
+            receiverId: device.remoteId,
+            content: content,
+          );
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text("Message sent!")),
+          );
+        } else {
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text("Messaging service not found.")),
+          );
+        }
+      } finally {
+        await bleDevice.disconnect();
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text("Error sending message: $e")),
+      );
+    }
   }
 
   void _showResetConfirmation(BuildContext context, WidgetRef ref) {

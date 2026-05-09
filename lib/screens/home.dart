@@ -36,6 +36,15 @@ class HomeScreen extends ConsumerWidget {
             onPressed: () => context.push(DiscoveryRoute().location),
             child: const Text("Discovery"),
           ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
+              ),
+            ),
+            onPressed: () => context.push(MessagesRoute().location),
+            child: const Text("Messages"),
+          ),
         ],
       ),
     );
