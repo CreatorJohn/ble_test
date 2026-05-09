@@ -86,48 +86,94 @@ class DiscoveryScreen extends ConsumerWidget {
                       itemBuilder: (context, index) {
                         final item = devices[index];
                         return ListTile(
-                          title: Row(
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            backgroundImage: item.profilePicture != null
+                                ? MemoryImage(
+                                    Uint8List.fromList(item.profilePicture!))
+                                : null,
+                            child: item.profilePicture == null
+                                ? const Icon(Icons.person)
+                                : null,
+                          ),
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(item.name ?? "Unknown"),
-                              const SizedBox(width: 8),
-                              StreamBuilder<BluetoothConnectionState>(
-                                stream: BluetoothDevice.fromId(item.remoteId)
-                                    .connectionState,
-                                builder: (context, snapshot) {
-                                  final state = snapshot.data ??
-                                      BluetoothConnectionState.disconnected;
-                                  if (state == BluetoothConnectionState.connected) {
-                                    return const Badge(
-                                      label: Text("CONNECTED"),
-                                      backgroundColor: Colors.green,
-                                    );
-                                  }
-                                  return const SizedBox.shrink();
-                                },
+                              Text(
+                                item.name ?? "Unknown",
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
-                              const SizedBox(width: 4),
-                              StreamBuilder<BluetoothBondState>(
-                                stream: BluetoothDevice.fromId(item.remoteId).bondState,
-                                builder: (context, snapshot) {
-                                  final state = snapshot.data ?? BluetoothBondState.none;
-                                  if (state == BluetoothBondState.bonded) {
-                                    return const Badge(
-                                      label: Text("BONDED"),
-                                      backgroundColor: Colors.blue,
-                                    );
-                                  }
-                                  return const SizedBox.shrink();
-                                },
+                              Row(
+                                children: [
+                                  StreamBuilder<BluetoothConnectionState>(
+                                    stream:
+                                        BluetoothDevice.fromId(item.remoteId)
+                                            .connectionState,
+                                    builder: (context, snapshot) {
+                                      final state = snapshot.data ??
+                                          BluetoothConnectionState.disconnected;
+                                      if (state ==
+                                          BluetoothConnectionState.connected) {
+                                        return const Padding(
+                                          padding: EdgeInsets.only(right: 4.0),
+                                          child: Badge(
+                                            label: Text("CONNECTED"),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
+                                  StreamBuilder<BluetoothBondState>(
+                                    stream:
+                                        BluetoothDevice.fromId(item.remoteId)
+                                            .bondState,
+                                    builder: (context, snapshot) {
+                                      final state = snapshot.data ??
+                                          BluetoothBondState.none;
+                                      if (state == BluetoothBondState.bonded) {
+                                        return const Padding(
+                                          padding: EdgeInsets.only(right: 4.0),
+                                          child: Badge(
+                                            label: Text("BONDED"),
+                                            backgroundColor: Colors.blue,
+                                          ),
+                                        );
+                                      }
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          subtitle: Text(item.remoteId),
+                          subtitle: Text(
+                              "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}"),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text("${item.rssi} dBm"),
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text("${item.rssi} dBm",
+                                      style: const TextStyle(fontSize: 10)),
+                                  const SizedBox(height: 4),
+                                  const Icon(Icons.signal_cellular_alt,
+                                      size: 16),
+                                ],
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.info_outline),
+                                tooltip: "View Profile",
+                                onPressed: () =>
+                                    _showProfileDialog(context, item),
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.send),
+                                tooltip: "Send Message",
                                 onPressed: () =>
                                     _sendMessageDialog(context, ref, item),
                               ),
@@ -141,6 +187,48 @@ class DiscoveryScreen extends ConsumerWidget {
                       const Center(child: CircularProgressIndicator()),
                   error: (err, stack) => Center(child: Text('Error: $err')),
                 ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showProfileDialog(BuildContext context, FoundDevice device) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(device.name ?? "Unknown Device"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (device.profilePicture != null)
+              Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  image: DecorationImage(
+                    image: MemoryImage(
+                        Uint8List.fromList(device.profilePicture!)),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              )
+            else
+              const Icon(Icons.account_circle, size: 100, color: Colors.grey),
+            const SizedBox(height: 16),
+            _ProfileInfo(label: "Stable ID", value: device.stableId.toString()),
+            _ProfileInfo(label: "MAC Address", value: device.remoteId),
+            _ProfileInfo(
+                label: "Last Seen", value: device.lastSeen.toLocal().toString()),
+            if (device.profileHash != null)
+              _ProfileInfo(label: "Profile Hash", value: device.profileHash!),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close"),
           ),
         ],
       ),
@@ -279,6 +367,29 @@ class DiscoveryScreen extends ConsumerWidget {
             ),
             child: const Text("Reset Everything"),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileInfo extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ProfileInfo({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          Text(value, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );

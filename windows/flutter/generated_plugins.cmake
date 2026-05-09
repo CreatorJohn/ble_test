@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  battery_plus
   ble_peripheral
   flutter_blue_plus_winrt
   geolocator_windows

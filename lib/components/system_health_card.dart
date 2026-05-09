@@ -37,12 +37,23 @@ class SystemHealthCard extends ConsumerWidget {
             const SizedBox(height: 8),
             const Text("Your system settings may kill the background scanner."),
             const SizedBox(height: 12),
-            if (health.isBatteryOptimized)
+            if (health.isBatterySaverOn)
               _ActionItem(
-                label: "Battery Optimization is ON",
+                label: "System-wide Battery Saver is ON",
                 buttonLabel: "Fix",
                 onPressed: () async {
-                  await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
+                  await DisableBatteryOptimization
+                      .showDisableBatteryOptimizationSettings();
+                  ref.read(systemHealthProvider.notifier).checkHealth();
+                },
+              ),
+            if (health.isBatteryOptimized)
+              _ActionItem(
+                label: "App Battery Optimization is ON",
+                buttonLabel: "Fix",
+                onPressed: () async {
+                  await DisableBatteryOptimization
+                      .showDisableBatteryOptimizationSettings();
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),
