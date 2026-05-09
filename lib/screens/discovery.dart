@@ -205,13 +205,26 @@ class DiscoveryScreen extends ConsumerWidget {
         }
 
         if (messageChar != null) {
-          await messageChar.write(utf8.encode(content));
+          final payload = utf8.encode(content);
+          final messageId = Random().nextInt(256);
+          final chunks = ChunkedTransferManager.generateChunks(
+              Uint8List.fromList(payload), messageId);
+
+          int sent = 0;
+          for (final chunk in chunks) {
+            // writeWithoutResponse is faster for "blasting" mesh data
+            await messageChar.write(chunk, withoutResponse: true);
+            sent++;
+            // Small delay to prevent radio congestion
+            await Future.delayed(const Duration(milliseconds: 10));
+          }
+
           await MessageHandler.handleOutgoingMessage(
-            receiverId: device.remoteId,
+            receiverStableId: device.stableId,
             content: content,
           );
           scaffoldMessenger.showSnackBar(
-            const SnackBar(content: Text("Message sent!")),
+            SnackBar(content: Text("Message sent! ($sent chunks)")),
           );
         } else {
           scaffoldMessenger.showSnackBar(

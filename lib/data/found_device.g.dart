@@ -17,28 +17,34 @@ const FoundDeviceSchema = CollectionSchema(
   name: r'FoundDevice',
   id: -210013710228081359,
   properties: {
-    r'lastSeen': PropertySchema(
+    r'lastPictureSync': PropertySchema(
       id: 0,
+      name: r'lastPictureSync',
+      type: IsarType.dateTime,
+    ),
+    r'lastSeen': PropertySchema(
+      id: 1,
       name: r'lastSeen',
       type: IsarType.dateTime,
     ),
-    r'name': PropertySchema(id: 1, name: r'name', type: IsarType.string),
+    r'name': PropertySchema(id: 2, name: r'name', type: IsarType.string),
     r'profileHash': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'profileHash',
       type: IsarType.string,
     ),
     r'profilePicture': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'profilePicture',
       type: IsarType.longList,
     ),
     r'remoteId': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'remoteId',
       type: IsarType.string,
     ),
-    r'rssi': PropertySchema(id: 5, name: r'rssi', type: IsarType.long),
+    r'rssi': PropertySchema(id: 6, name: r'rssi', type: IsarType.long),
+    r'stableId': PropertySchema(id: 7, name: r'stableId', type: IsarType.long),
   },
 
   estimateSize: _foundDeviceEstimateSize,
@@ -47,16 +53,16 @@ const FoundDeviceSchema = CollectionSchema(
   deserializeProp: _foundDeviceDeserializeProp,
   idName: r'id',
   indexes: {
-    r'remoteId': IndexSchema(
-      id: 6301175856541681032,
-      name: r'remoteId',
+    r'stableId': IndexSchema(
+      id: 8172736602419351792,
+      name: r'stableId',
       unique: true,
       replace: true,
       properties: [
         IndexPropertySchema(
-          name: r'remoteId',
-          type: IndexType.hash,
-          caseSensitive: true,
+          name: r'stableId',
+          type: IndexType.value,
+          caseSensitive: false,
         ),
       ],
     ),
@@ -117,12 +123,14 @@ void _foundDeviceSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDateTime(offsets[0], object.lastSeen);
-  writer.writeString(offsets[1], object.name);
-  writer.writeString(offsets[2], object.profileHash);
-  writer.writeLongList(offsets[3], object.profilePicture);
-  writer.writeString(offsets[4], object.remoteId);
-  writer.writeLong(offsets[5], object.rssi);
+  writer.writeDateTime(offsets[0], object.lastPictureSync);
+  writer.writeDateTime(offsets[1], object.lastSeen);
+  writer.writeString(offsets[2], object.name);
+  writer.writeString(offsets[3], object.profileHash);
+  writer.writeLongList(offsets[4], object.profilePicture);
+  writer.writeString(offsets[5], object.remoteId);
+  writer.writeLong(offsets[6], object.rssi);
+  writer.writeLong(offsets[7], object.stableId);
 }
 
 FoundDevice _foundDeviceDeserialize(
@@ -133,12 +141,14 @@ FoundDevice _foundDeviceDeserialize(
 ) {
   final object = FoundDevice();
   object.id = id;
-  object.lastSeen = reader.readDateTime(offsets[0]);
-  object.name = reader.readStringOrNull(offsets[1]);
-  object.profileHash = reader.readStringOrNull(offsets[2]);
-  object.profilePicture = reader.readLongList(offsets[3]);
-  object.remoteId = reader.readString(offsets[4]);
-  object.rssi = reader.readLong(offsets[5]);
+  object.lastPictureSync = reader.readDateTimeOrNull(offsets[0]);
+  object.lastSeen = reader.readDateTime(offsets[1]);
+  object.name = reader.readStringOrNull(offsets[2]);
+  object.profileHash = reader.readStringOrNull(offsets[3]);
+  object.profilePicture = reader.readLongList(offsets[4]);
+  object.remoteId = reader.readString(offsets[5]);
+  object.rssi = reader.readLong(offsets[6]);
+  object.stableId = reader.readLong(offsets[7]);
   return object;
 }
 
@@ -150,16 +160,20 @@ P _foundDeviceDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 1:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 2:
       return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readLongList(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongList(offset)) as P;
     case 5:
+      return (reader.readString(offset)) as P;
+    case 6:
+      return (reader.readLong(offset)) as P;
+    case 7:
       return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -183,59 +197,59 @@ void _foundDeviceAttach(
 }
 
 extension FoundDeviceByIndex on IsarCollection<FoundDevice> {
-  Future<FoundDevice?> getByRemoteId(String remoteId) {
-    return getByIndex(r'remoteId', [remoteId]);
+  Future<FoundDevice?> getByStableId(int stableId) {
+    return getByIndex(r'stableId', [stableId]);
   }
 
-  FoundDevice? getByRemoteIdSync(String remoteId) {
-    return getByIndexSync(r'remoteId', [remoteId]);
+  FoundDevice? getByStableIdSync(int stableId) {
+    return getByIndexSync(r'stableId', [stableId]);
   }
 
-  Future<bool> deleteByRemoteId(String remoteId) {
-    return deleteByIndex(r'remoteId', [remoteId]);
+  Future<bool> deleteByStableId(int stableId) {
+    return deleteByIndex(r'stableId', [stableId]);
   }
 
-  bool deleteByRemoteIdSync(String remoteId) {
-    return deleteByIndexSync(r'remoteId', [remoteId]);
+  bool deleteByStableIdSync(int stableId) {
+    return deleteByIndexSync(r'stableId', [stableId]);
   }
 
-  Future<List<FoundDevice?>> getAllByRemoteId(List<String> remoteIdValues) {
-    final values = remoteIdValues.map((e) => [e]).toList();
-    return getAllByIndex(r'remoteId', values);
+  Future<List<FoundDevice?>> getAllByStableId(List<int> stableIdValues) {
+    final values = stableIdValues.map((e) => [e]).toList();
+    return getAllByIndex(r'stableId', values);
   }
 
-  List<FoundDevice?> getAllByRemoteIdSync(List<String> remoteIdValues) {
-    final values = remoteIdValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'remoteId', values);
+  List<FoundDevice?> getAllByStableIdSync(List<int> stableIdValues) {
+    final values = stableIdValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'stableId', values);
   }
 
-  Future<int> deleteAllByRemoteId(List<String> remoteIdValues) {
-    final values = remoteIdValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'remoteId', values);
+  Future<int> deleteAllByStableId(List<int> stableIdValues) {
+    final values = stableIdValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'stableId', values);
   }
 
-  int deleteAllByRemoteIdSync(List<String> remoteIdValues) {
-    final values = remoteIdValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'remoteId', values);
+  int deleteAllByStableIdSync(List<int> stableIdValues) {
+    final values = stableIdValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'stableId', values);
   }
 
-  Future<Id> putByRemoteId(FoundDevice object) {
-    return putByIndex(r'remoteId', object);
+  Future<Id> putByStableId(FoundDevice object) {
+    return putByIndex(r'stableId', object);
   }
 
-  Id putByRemoteIdSync(FoundDevice object, {bool saveLinks = true}) {
-    return putByIndexSync(r'remoteId', object, saveLinks: saveLinks);
+  Id putByStableIdSync(FoundDevice object, {bool saveLinks = true}) {
+    return putByIndexSync(r'stableId', object, saveLinks: saveLinks);
   }
 
-  Future<List<Id>> putAllByRemoteId(List<FoundDevice> objects) {
-    return putAllByIndex(r'remoteId', objects);
+  Future<List<Id>> putAllByStableId(List<FoundDevice> objects) {
+    return putAllByIndex(r'stableId', objects);
   }
 
-  List<Id> putAllByRemoteIdSync(
+  List<Id> putAllByStableIdSync(
     List<FoundDevice> objects, {
     bool saveLinks = true,
   }) {
-    return putAllByIndexSync(r'remoteId', objects, saveLinks: saveLinks);
+    return putAllByIndexSync(r'stableId', objects, saveLinks: saveLinks);
   }
 }
 
@@ -244,6 +258,14 @@ extension FoundDeviceQueryWhereSort
   QueryBuilder<FoundDevice, FoundDevice, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhere> anyStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'stableId'),
+      );
     });
   }
 }
@@ -320,34 +342,34 @@ extension FoundDeviceQueryWhere
     });
   }
 
-  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> remoteIdEqualTo(
-    String remoteId,
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> stableIdEqualTo(
+    int stableId,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'remoteId', value: [remoteId]),
+        IndexWhereClause.equalTo(indexName: r'stableId', value: [stableId]),
       );
     });
   }
 
-  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> remoteIdNotEqualTo(
-    String remoteId,
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> stableIdNotEqualTo(
+    int stableId,
   ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'remoteId',
+                indexName: r'stableId',
                 lower: [],
-                upper: [remoteId],
+                upper: [stableId],
                 includeUpper: false,
               ),
             )
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'remoteId',
-                lower: [remoteId],
+                indexName: r'stableId',
+                lower: [stableId],
                 includeLower: false,
                 upper: [],
               ),
@@ -356,21 +378,72 @@ extension FoundDeviceQueryWhere
         return query
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'remoteId',
-                lower: [remoteId],
+                indexName: r'stableId',
+                lower: [stableId],
                 includeLower: false,
                 upper: [],
               ),
             )
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'remoteId',
+                indexName: r'stableId',
                 lower: [],
-                upper: [remoteId],
+                upper: [stableId],
                 includeUpper: false,
               ),
             );
       }
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> stableIdGreaterThan(
+    int stableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'stableId',
+          lower: [stableId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> stableIdLessThan(
+    int stableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'stableId',
+          lower: [],
+          upper: [stableId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterWhereClause> stableIdBetween(
+    int lowerStableId,
+    int upperStableId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'stableId',
+          lower: [lowerStableId],
+          includeLower: includeLower,
+          upper: [upperStableId],
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
@@ -506,6 +579,79 @@ extension FoundDeviceQueryFilter
       return query.addFilterCondition(
         FilterCondition.between(
           property: r'id',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'lastPictureSync'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'lastPictureSync'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastPictureSync', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncGreaterThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastPictureSync',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncLessThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastPictureSync',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  lastPictureSyncBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastPictureSync',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
@@ -1221,6 +1367,61 @@ extension FoundDeviceQueryFilter
       );
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> stableIdEqualTo(
+    int value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'stableId', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  stableIdGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'stableId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  stableIdLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'stableId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> stableIdBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'stableId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
 }
 
 extension FoundDeviceQueryObject
@@ -1231,6 +1432,19 @@ extension FoundDeviceQueryLinks
 
 extension FoundDeviceQuerySortBy
     on QueryBuilder<FoundDevice, FoundDevice, QSortBy> {
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLastPictureSync() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastPictureSync', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy>
+  sortByLastPictureSyncDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastPictureSync', Sort.desc);
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLastSeen() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lastSeen', Sort.asc);
@@ -1290,6 +1504,18 @@ extension FoundDeviceQuerySortBy
       return query.addSortBy(r'rssi', Sort.desc);
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'stableId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByStableIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'stableId', Sort.desc);
+    });
+  }
 }
 
 extension FoundDeviceQuerySortThenBy
@@ -1303,6 +1529,19 @@ extension FoundDeviceQuerySortThenBy
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByLastPictureSync() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastPictureSync', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy>
+  thenByLastPictureSyncDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastPictureSync', Sort.desc);
     });
   }
 
@@ -1365,10 +1604,29 @@ extension FoundDeviceQuerySortThenBy
       return query.addSortBy(r'rssi', Sort.desc);
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'stableId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByStableIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'stableId', Sort.desc);
+    });
+  }
 }
 
 extension FoundDeviceQueryWhereDistinct
     on QueryBuilder<FoundDevice, FoundDevice, QDistinct> {
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct>
+  distinctByLastPictureSync() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'lastPictureSync');
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByLastSeen() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'lastSeen');
@@ -1410,6 +1668,12 @@ extension FoundDeviceQueryWhereDistinct
       return query.addDistinctBy(r'rssi');
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'stableId');
+    });
+  }
 }
 
 extension FoundDeviceQueryProperty
@@ -1417,6 +1681,13 @@ extension FoundDeviceQueryProperty
   QueryBuilder<FoundDevice, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<FoundDevice, DateTime?, QQueryOperations>
+  lastPictureSyncProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastPictureSync');
     });
   }
 
@@ -1454,6 +1725,12 @@ extension FoundDeviceQueryProperty
   QueryBuilder<FoundDevice, int, QQueryOperations> rssiProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'rssi');
+    });
+  }
+
+  QueryBuilder<FoundDevice, int, QQueryOperations> stableIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'stableId');
     });
   }
 }

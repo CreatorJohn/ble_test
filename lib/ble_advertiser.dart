@@ -134,14 +134,27 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setWriteRequestCallback(
-        (deviceId, characteristicUuid, offset, value) {
+        (deviceId, characteristicUuid, offset, value) async {
       _log.info('Write request from $deviceId for $characteristicUuid');
       if (characteristicUuid.toLowerCase() == messageCharUuid.toLowerCase()) {
         if (value != null) {
-          MessageHandler.handleIncomingMessage(
-            senderId: deviceId,
-            data: value,
-          );
+          // Lookup stableId from database using the MAC address
+          final isar = IsarService();
+          if (isar.isOpen) {
+            final device = await isar.db.foundDevices
+                .where()
+                .remoteIdEqualTo(deviceId)
+                .findFirst();
+
+            if (device != null) {
+              MessageHandler.handleIncomingMessage(
+                senderStableId: device.stableId,
+                data: value,
+              );
+            } else {
+              _log.warning('Received message from unknown MAC: $deviceId');
+            }
+          }
         }
       }
       return WriteRequestResult();

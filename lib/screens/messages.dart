@@ -31,7 +31,7 @@ class MessagesScreen extends ConsumerWidget {
               return ListTile(
                 title: Text(msg.content),
                 subtitle: Text(
-                  "${DateFormat('HH:mm:ss').format(msg.timestamp)} - ${isReceived ? 'From: ${msg.senderId}' : 'To: ${msg.receiverId}'}",
+                  "${DateFormat('HH:mm:ss').format(msg.timestamp)} - ${isReceived ? 'From: ${msg.senderStableId}' : 'To: ${msg.receiverStableId}'}",
                   style: const TextStyle(fontSize: 10),
                 ),
                 leading: Icon(

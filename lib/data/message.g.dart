@@ -23,15 +23,15 @@ const MessageSchema = CollectionSchema(
       name: r'isReceived',
       type: IsarType.bool,
     ),
-    r'receiverId': PropertySchema(
+    r'receiverStableId': PropertySchema(
       id: 2,
-      name: r'receiverId',
-      type: IsarType.string,
+      name: r'receiverStableId',
+      type: IsarType.long,
     ),
-    r'senderId': PropertySchema(
+    r'senderStableId': PropertySchema(
       id: 3,
-      name: r'senderId',
-      type: IsarType.string,
+      name: r'senderStableId',
+      type: IsarType.long,
     ),
     r'timestamp': PropertySchema(
       id: 4,
@@ -62,8 +62,6 @@ int _messageEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.content.length * 3;
-  bytesCount += 3 + object.receiverId.length * 3;
-  bytesCount += 3 + object.senderId.length * 3;
   return bytesCount;
 }
 
@@ -75,8 +73,8 @@ void _messageSerialize(
 ) {
   writer.writeString(offsets[0], object.content);
   writer.writeBool(offsets[1], object.isReceived);
-  writer.writeString(offsets[2], object.receiverId);
-  writer.writeString(offsets[3], object.senderId);
+  writer.writeLong(offsets[2], object.receiverStableId);
+  writer.writeLong(offsets[3], object.senderStableId);
   writer.writeDateTime(offsets[4], object.timestamp);
 }
 
@@ -90,8 +88,8 @@ Message _messageDeserialize(
   object.content = reader.readString(offsets[0]);
   object.id = id;
   object.isReceived = reader.readBool(offsets[1]);
-  object.receiverId = reader.readString(offsets[2]);
-  object.senderId = reader.readString(offsets[3]);
+  object.receiverStableId = reader.readLong(offsets[2]);
+  object.senderStableId = reader.readLong(offsets[3]);
   object.timestamp = reader.readDateTime(offsets[4]);
   return object;
 }
@@ -108,9 +106,9 @@ P _messageDeserializeProp<P>(
     case 1:
       return (reader.readBool(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 4:
       return (reader.readDateTime(offset)) as P;
     default:
@@ -423,294 +421,114 @@ extension MessageQueryFilter
     });
   }
 
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  QueryBuilder<Message, Message, QAfterFilterCondition> receiverStableIdEqualTo(
+    int value,
+  ) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
-        FilterCondition.equalTo(
-          property: r'receiverId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
+        FilterCondition.equalTo(property: r'receiverStableId', value: value),
       );
     });
   }
 
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
+  QueryBuilder<Message, Message, QAfterFilterCondition>
+  receiverStableIdGreaterThan(int value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(
           include: include,
-          property: r'receiverId',
+          property: r'receiverStableId',
           value: value,
-          caseSensitive: caseSensitive,
         ),
       );
     });
   }
 
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdLessThan(
-    String value, {
+  QueryBuilder<Message, Message, QAfterFilterCondition>
+  receiverStableIdLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receiverStableId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> receiverStableIdBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receiverStableId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> senderStableIdEqualTo(
+    int value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'senderStableId', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition>
+  senderStableIdGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'senderStableId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> senderStableIdLessThan(
+    int value, {
     bool include = false,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.lessThan(
           include: include,
-          property: r'receiverId',
+          property: r'senderStableId',
           value: value,
-          caseSensitive: caseSensitive,
         ),
       );
     });
   }
 
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdBetween(
-    String lower,
-    String upper, {
+  QueryBuilder<Message, Message, QAfterFilterCondition> senderStableIdBetween(
+    int lower,
+    int upper, {
     bool includeLower = true,
     bool includeUpper = true,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.between(
-          property: r'receiverId',
+          property: r'senderStableId',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
           includeUpper: includeUpper,
-          caseSensitive: caseSensitive,
         ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.startsWith(
-          property: r'receiverId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.endsWith(
-          property: r'receiverId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdContains(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.contains(
-          property: r'receiverId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdMatches(
-    String pattern, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.matches(
-          property: r'receiverId',
-          wildcard: pattern,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(property: r'receiverId', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> receiverIdIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(property: r'receiverId', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(
-          include: include,
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdLessThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.lessThan(
-          include: include,
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.between(
-          property: r'senderId',
-          lower: lower,
-          includeLower: includeLower,
-          upper: upper,
-          includeUpper: includeUpper,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.startsWith(
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.endsWith(
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdContains(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.contains(
-          property: r'senderId',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdMatches(
-    String pattern, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.matches(
-          property: r'senderId',
-          wildcard: pattern,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(property: r'senderId', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<Message, Message, QAfterFilterCondition> senderIdIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(property: r'senderId', value: ''),
       );
     });
   }
@@ -806,27 +624,27 @@ extension MessageQuerySortBy on QueryBuilder<Message, Message, QSortBy> {
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> sortByReceiverId() {
+  QueryBuilder<Message, Message, QAfterSortBy> sortByReceiverStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'receiverId', Sort.asc);
+      return query.addSortBy(r'receiverStableId', Sort.asc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> sortByReceiverIdDesc() {
+  QueryBuilder<Message, Message, QAfterSortBy> sortByReceiverStableIdDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'receiverId', Sort.desc);
+      return query.addSortBy(r'receiverStableId', Sort.desc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> sortBySenderId() {
+  QueryBuilder<Message, Message, QAfterSortBy> sortBySenderStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'senderId', Sort.asc);
+      return query.addSortBy(r'senderStableId', Sort.asc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> sortBySenderIdDesc() {
+  QueryBuilder<Message, Message, QAfterSortBy> sortBySenderStableIdDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'senderId', Sort.desc);
+      return query.addSortBy(r'senderStableId', Sort.desc);
     });
   }
 
@@ -881,27 +699,27 @@ extension MessageQuerySortThenBy
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> thenByReceiverId() {
+  QueryBuilder<Message, Message, QAfterSortBy> thenByReceiverStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'receiverId', Sort.asc);
+      return query.addSortBy(r'receiverStableId', Sort.asc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> thenByReceiverIdDesc() {
+  QueryBuilder<Message, Message, QAfterSortBy> thenByReceiverStableIdDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'receiverId', Sort.desc);
+      return query.addSortBy(r'receiverStableId', Sort.desc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> thenBySenderId() {
+  QueryBuilder<Message, Message, QAfterSortBy> thenBySenderStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'senderId', Sort.asc);
+      return query.addSortBy(r'senderStableId', Sort.asc);
     });
   }
 
-  QueryBuilder<Message, Message, QAfterSortBy> thenBySenderIdDesc() {
+  QueryBuilder<Message, Message, QAfterSortBy> thenBySenderStableIdDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'senderId', Sort.desc);
+      return query.addSortBy(r'senderStableId', Sort.desc);
     });
   }
 
@@ -934,19 +752,15 @@ extension MessageQueryWhereDistinct
     });
   }
 
-  QueryBuilder<Message, Message, QDistinct> distinctByReceiverId({
-    bool caseSensitive = true,
-  }) {
+  QueryBuilder<Message, Message, QDistinct> distinctByReceiverStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'receiverId', caseSensitive: caseSensitive);
+      return query.addDistinctBy(r'receiverStableId');
     });
   }
 
-  QueryBuilder<Message, Message, QDistinct> distinctBySenderId({
-    bool caseSensitive = true,
-  }) {
+  QueryBuilder<Message, Message, QDistinct> distinctBySenderStableId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'senderId', caseSensitive: caseSensitive);
+      return query.addDistinctBy(r'senderStableId');
     });
   }
 
@@ -977,15 +791,15 @@ extension MessageQueryProperty
     });
   }
 
-  QueryBuilder<Message, String, QQueryOperations> receiverIdProperty() {
+  QueryBuilder<Message, int, QQueryOperations> receiverStableIdProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'receiverId');
+      return query.addPropertyName(r'receiverStableId');
     });
   }
 
-  QueryBuilder<Message, String, QQueryOperations> senderIdProperty() {
+  QueryBuilder<Message, int, QQueryOperations> senderStableIdProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'senderId');
+      return query.addPropertyName(r'senderStableId');
     });
   }
 

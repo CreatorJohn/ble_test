@@ -113,35 +113,62 @@ void onStart(ServiceInstance service) async {
 
     for (final ScanResult result in results) {
       final advData = result.advertisementData;
-      String? discoveredHash;
+      
+      // Look for our specific Manufacturer Data block (ID 0xFFFF, 6 bytes payload)
+      final meshData = advData.manufacturerData[0xFFFF];
+      if (meshData == null || meshData.length < 6) continue;
 
-      // Extract 6-byte hash from the start of the localName
-      if (advData.advName.length >= 6) {
-        discoveredHash = advData.advName.substring(0, 6);
+      final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
+      final stableId = buffer.getUint32(0, Endian.big);
+
+      // Extract scan response data from local name if possible
+      // In this prototype, we prepend 12 bytes of scan response data to the name
+      Uint8List? scanResponseData;
+      String displayName = "Unknown device";
+      
+      if (advData.advName.length >= 12) {
+        scanResponseData = Uint8List.fromList(advData.advName.substring(0, 12).codeUnits);
+        displayName = advData.advName.substring(12);
+      } else if (advData.advName.isNotEmpty) {
+        displayName = advData.advName;
       }
 
       final device = FoundDevice()
+        ..stableId = stableId
         ..remoteId = result.device.remoteId.toString()
-        ..name = advData.advName.length > 6
-            ? advData.advName.substring(6)
-            : (advData.advName.isNotEmpty ? advData.advName : "Unknown device")
+        ..name = displayName
         ..rssi = result.rssi
-        ..lastSeen = DateTime.now()
-        ..profileHash = discoveredHash;
+        ..lastSeen = DateTime.now();
+
+      if (scanResponseData != null) {
+        // Full hash is bytes 6-11 of scanResponseData
+        final fullHashBytes = scanResponseData.sublist(6, 12);
+        device.profileHash = fullHashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      }
 
       try {
-        // 1. Get existing device to check if hash changed
+        // Upsert by stableId
         final existing = await isarService.db.foundDevices
             .where()
-            .remoteIdEqualTo(device.remoteId)
+            .stableIdEqualTo(stableId)
             .findFirst();
 
-        if (existing != null && existing.profileHash != discoveredHash) {
-          // 2. Hash changed! Fetch new profile picture
-          _fetchProfilePicture(result.device, isarService);
-        } else if (existing == null && discoveredHash != null) {
-          // 3. New device! Fetch initial profile picture
-          _fetchProfilePicture(result.device, isarService);
+        if (existing != null) {
+          device.id = existing.id; // Keep Isar internal ID
+          device.profilePicture = existing.profilePicture;
+          device.lastPictureSync = existing.lastPictureSync;
+          
+          // Check for picture update
+          bool hashChanged = device.profileHash != null && existing.profileHash != device.profileHash;
+          bool needsForcedSync = existing.lastPictureSync == null || 
+              DateTime.now().difference(existing.lastPictureSync!).inHours >= 24;
+
+          if (hashChanged || needsForcedSync) {
+             _fetchProfilePicture(result.device, isarService, stableId);
+          }
+        } else {
+          // New device discovered
+          _fetchProfilePicture(result.device, isarService, stableId);
         }
 
         await isarService.putFoundDevice(device);
@@ -219,9 +246,10 @@ void onStart(ServiceInstance service) async {
 }
 
 Future<void> _fetchProfilePicture(
-    BluetoothDevice device, IsarService isar) async {
+    BluetoothDevice device, IsarService isar, int stableId) async {
   try {
-    await device.connect(timeout: const Duration(seconds: 5), license: License.free);
+    await device.connect(
+        timeout: const Duration(seconds: 5), license: License.free);
     final services = await device.discoverServices();
     BluetoothCharacteristic? picChar;
 
@@ -243,10 +271,11 @@ Future<void> _fetchProfilePicture(
       if (value.isNotEmpty) {
         final existing = await isar.db.foundDevices
             .where()
-            .remoteIdEqualTo(device.remoteId.toString())
+            .stableIdEqualTo(stableId)
             .findFirst();
         if (existing != null) {
           existing.profilePicture = value;
+          existing.lastPictureSync = DateTime.now();
           await isar.putFoundDevice(existing);
         }
       }
