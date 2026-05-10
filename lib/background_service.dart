@@ -13,6 +13,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:isar_community/isar.dart';
+import 'package:logging/logging.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
@@ -63,10 +64,29 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
+  // 1. Setup isolate-level logging
+  final Logger log = Logger('BackgroundService');
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((record) {
+    service.invoke('log', {
+      'message':
+          '[BG] [${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}',
+      'level': record.level.name,
+    });
+  });
+
+  log.info('Service isolate started');
+
   await Future.delayed(const Duration(seconds: 1));
 
   final advertiser = BLEAdvertiser();
-  await advertiser.initialize(ignorePermissions: true);
+  try {
+    log.info('Initializing BLEAdvertiser...');
+    await advertiser.initialize(ignorePermissions: true);
+    log.info('BLEAdvertiser initialized');
+  } catch (e) {
+    log.severe('BLEAdvertiser initialization failed: $e');
+  }
 
   String currentName = "BLE Test";
   double currentLat = 0.0;
@@ -74,31 +94,43 @@ void onStart(ServiceInstance service) async {
   bool isOnline = false;
 
   Future<void> updateAd() async {
-    await advertiser.startAdvertising(
-      localName: currentName,
-      latitude: currentLat,
-      longitude: currentLon,
-      isOnline: isOnline,
-    );
+    try {
+      log.info('Updating advertisement: name=$currentName, online=$isOnline');
+      await advertiser.startAdvertising(
+        localName: currentName,
+        latitude: currentLat,
+        longitude: currentLon,
+        isOnline: isOnline,
+      );
+    } catch (e) {
+      log.severe('updateAd failed: $e');
+    }
   }
 
   await updateAd();
 
+  log.info('Setting up location stream...');
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
     ),
   ).listen((Position position) {
+    log.fine('Location update: ${position.latitude}, ${position.longitude}');
     currentLat = position.latitude;
     currentLon = position.longitude;
     updateAd();
+  }, onError: (e) {
+    log.warning('Location stream error: $e');
   });
 
   final isarService = IsarService();
   try {
+    log.info('Initializing IsarService...');
     await isarService.initialize();
+    log.info('IsarService initialized');
   } catch (e) {
+    log.severe('IsarService initialization failed: $e');
     return;
   }
 
@@ -166,11 +198,14 @@ void onStart(ServiceInstance service) async {
         }
 
         if (needsMetadataUpdate) {
-          _fetchFullMetadata(result.device, isarService, stableId);
+          log.info('New or changed metadata detected for $stableId. Fetching...');
+          _fetchFullMetadata(result.device, isarService, stableId, log);
         }
 
         await isarService.putFoundDevice(device);
-      } catch (e) {}
+      } catch (e) {
+        log.warning('Error processing scan result for $stableId: $e');
+      }
     }
   });
 
@@ -180,17 +215,28 @@ void onStart(ServiceInstance service) async {
 
   Future<void> startSafeScan() async {
     try {
+      log.info('Attempting startSafeScan...');
       service.invoke("updateAdvertisingName", {"name": currentName});
-      if (await FlutterBluePlus.isSupported == false) return;
-      if (FlutterBluePlus.isScanningNow == false) {
+      
+      final isSupported = await FlutterBluePlus.isSupported;
+      log.info('Bluetooth supported: $isSupported');
+      if (!isSupported) return;
+
+      final isScanning = FlutterBluePlus.isScanningNow;
+      log.info('Current scan state: isScanning=$isScanning');
+      
+      if (!isScanning) {
+        log.info('Starting BLE scan (timeout: 20s)...');
         scanStartTime = DateTime.now();
         await FlutterBluePlus.startScan(
           timeout: scanDuration,
           withServices: [Guid(BLEAdvertiser.serviceUuid)],
           androidScanMode: AndroidScanMode.lowPower,
         );
+        log.info('BLE scan started successfully');
       }
     } catch (e) {
+      log.severe('startSafeScan failed: $e');
       scanStartTime = null;
     }
   }
@@ -206,12 +252,15 @@ void onStart(ServiceInstance service) async {
   });
 
   Timer.periodic(waitDuration + scanDuration, (timer) async {
+    log.info('Scanning cycle timer fired');
     await startSafeScan();
   });
 
+  log.info('Performing initial scan...');
   await startSafeScan();
 
   service.on('stopService').listen((event) async {
+    log.info('Stop service command received');
     await advertiser.stopAdvertising();
     service.stopSelf();
   });
@@ -219,6 +268,7 @@ void onStart(ServiceInstance service) async {
   service.on('setAdvertisingName').listen((event) {
     final name = event?['name'];
     if (name is String) {
+      log.info('Setting advertising name to: $name');
       currentName = name;
       updateAd();
     }
@@ -227,6 +277,7 @@ void onStart(ServiceInstance service) async {
   service.on('setOnlineStatus').listen((event) {
     final status = event?['isOnline'];
     if (status is bool) {
+      log.info('Setting online status to: $status');
       isOnline = status;
       updateAd();
     }
@@ -234,10 +285,13 @@ void onStart(ServiceInstance service) async {
 }
 
 Future<void> _fetchFullMetadata(
-    BluetoothDevice device, IsarService isar, int stableId) async {
+    BluetoothDevice device, IsarService isar, int stableId, Logger log) async {
   try {
+    log.info('Connecting to $stableId to fetch metadata...');
     await device.connect(
         timeout: const Duration(seconds: 8), license: License.free);
+    log.info('Connected to $stableId');
+    
     final services = await device.discoverServices();
     BluetoothCharacteristic? picChar;
     BluetoothCharacteristic? hashChar;
@@ -249,23 +303,16 @@ Future<void> _fetchFullMetadata(
           BLEAdvertiser.serviceUuid.toLowerCase()) {
         for (final c in s.characteristics) {
           final charId = c.uuid.toString().toLowerCase();
-          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
-            picChar = c;
-          }
-          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
-            hashChar = c;
-          }
-          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase()) {
-            locChar = c;
-          }
-          if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
-            keyChar = c;
-          }
+          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) picChar = c;
+          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) hashChar = c;
+          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase()) locChar = c;
+          if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) keyChar = c;
         }
       }
     }
 
     if (hashChar != null) {
+      log.info('Reading full hash from $stableId...');
       final hashBytes = await hashChar.read();
       final hashHex =
           hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
@@ -274,31 +321,33 @@ Future<void> _fetchFullMetadata(
           .where()
           .stableIdEqualTo(stableId)
           .findFirst();
+          
       if (existing != null) {
         existing.profileHash = hashHex;
 
-        // Sync Public Key
         if (keyChar != null) {
+          log.info('Syncing public key for $stableId...');
           existing.publicKey = await keyChar.read();
         }
 
-        // Only download pic if hash actually changed or null
         if (picChar != null &&
             (existing.profilePicture == null ||
                 existing.profileHash != hashHex)) {
+          log.info('Downloading profile picture for $stableId...');
           existing.profilePicture = await picChar.read();
         }
 
         if (locChar != null) {
-          // Update location from GATT (logic could be added to update device.lat/long)
           await locChar.read();
         }
 
         existing.lastPictureSync = DateTime.now();
         await isar.putFoundDevice(existing);
+        log.info('Metadata sync complete for $stableId');
       }
     }
   } catch (e) {
+    log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
     await device.disconnect();
   }

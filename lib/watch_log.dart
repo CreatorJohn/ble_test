@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:logging/logging.dart' show Logger, Level;
 
 typedef LogListener =
@@ -24,16 +25,44 @@ class WatchLog {
     if (_initialized) return;
     _initialized = true;
 
-    // Initialize logging
-    Logger.root.level = Level.ALL; // Log all messages
+    // 1. Initialize local logging
+    Logger.root.level = Level.ALL;
     Logger.root.onRecord.listen((record) {
       final message =
           '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}';
 
-      _logStream.add((message, record.level));
-      _logBuffer.add((message, record.level));
+      _addLog(message, record.level);
       print(message);
     });
+
+    // 2. Listen for logs from the background service
+    FlutterBackgroundService().on('log').listen((event) {
+      final message = event?['message'] as String?;
+      final levelName = event?['level'] as String?;
+      if (message != null) {
+        final level = _parseLevel(levelName);
+        _addLog(message, level);
+      }
+    });
+  }
+
+  static void _addLog(String message, Level level) {
+    _logStream.add((message, level));
+    _logBuffer.add((message, level));
+    // Keep buffer manageable
+    if (_logBuffer.length > 1000) {
+      _logBuffer.removeAt(0);
+    }
+  }
+
+  static Level _parseLevel(String? name) {
+    if (name == 'SEVERE') return Level.SEVERE;
+    if (name == 'WARNING') return Level.WARNING;
+    if (name == 'CONFIG') return Level.CONFIG;
+    if (name == 'FINE') return Level.FINE;
+    if (name == 'FINER') return Level.FINER;
+    if (name == 'FINEST') return Level.FINEST;
+    return Level.INFO;
   }
 
   static List<LogRecord> get logs => List.unmodifiable(_logBuffer);
@@ -45,8 +74,6 @@ class WatchLog {
   }
 
   static Future<void> copyLogsToClipboard() async {
-    // This is a placeholder implementation. In a real app, you would use
-    // the clipboard package to copy logs to the clipboard.
     final logs = List.from(_logBuffer);
     final allLogs = logs.map((it) => it.$1).join('\n');
     await Clipboard.setData(ClipboardData(text: allLogs));
