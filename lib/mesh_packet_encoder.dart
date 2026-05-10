@@ -21,7 +21,9 @@ class MeshPacketEncoder {
     return (encoded / max24 * range) + min;
   }
 
-  static Uint8List encodeMainPacket({
+  /// Encodes the primary 48-bit mesh identity payload.
+  /// Result is 6 bytes.
+  static Uint8List encodeIdentityPayload({
     required int stableId,
     required Uint8List profileHash,
     required bool isIOS,
@@ -33,9 +35,10 @@ class MeshPacketEncoder {
     // Stable ID (4 bytes / 32 bits)
     buffer.setUint32(0, stableId, Endian.big);
 
-    // Profile Hash Prefix (14 bits) + Flags (2 bits) into remaining 2 bytes
-    // Read first 2 bytes of hash
-    int hashPrefix = (profileHash[0] << 8 | profileHash[1]) >> 2; // Keep top 14 bits
+    // Profile Hash Prefix (14 bits) + Flags (2 bits)
+    // We use the first 2 bytes of the hash
+    int hashValue = (profileHash[0] << 8) | profileHash[1];
+    int hashPrefix = (hashValue >> 2) & 0x3FFF; // Top 14 bits
 
     int flags = 0;
     if (isIOS) flags |= 0x02;
@@ -47,27 +50,13 @@ class MeshPacketEncoder {
     return data;
   }
 
-  static Uint8List encodeScanResponseData({
-    required double latitude,
-    required double longitude,
-    required Uint8List profileHash,
-  }) {
-    final lat24 = encodeCoordinate(latitude, true);
-    final lon24 = encodeCoordinate(longitude, false);
-
-    final data = Uint8List(12);
-    // Lat (3) + Lon (3)
-    data[0] = (lat24 >> 16) & 0xFF;
-    data[1] = (lat24 >> 8) & 0xFF;
-    data[2] = lat24 & 0xFF;
-
-    data[3] = (lon24 >> 16) & 0xFF;
-    data[4] = (lon24 >> 8) & 0xFF;
-    data[5] = lon24 & 0xFF;
-
-    // Full Hash (6)
-    data.setRange(6, 12, profileHash);
-
+  /// Encodes 24-bit Lat/Long into a 6-byte buffer for GATT.
+  static Uint8List encodeLocation(double lat, double lon) {
+    final lat24 = encodeCoordinate(lat, true);
+    final lon24 = encodeCoordinate(lon, false);
+    final data = Uint8List(6);
+    data[0] = (lat24 >> 16) & 0xFF; data[1] = (lat24 >> 8) & 0xFF; data[2] = lat24 & 0xFF;
+    data[3] = (lon24 >> 16) & 0xFF; data[4] = (lon24 >> 8) & 0xFF; data[5] = lon24 & 0xFF;
     return data;
   }
 }
