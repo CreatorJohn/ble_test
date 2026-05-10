@@ -54,7 +54,7 @@ class DiscoveryScreen extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(width: 8),
-                _StatusIndicator(isRunning: isRunning),
+                _StatusIndicator(isRunning: isRunning, progress: progress),
               ],
             ),
           ),
@@ -408,20 +408,33 @@ class _ProfileInfo extends StatelessWidget {
 
 class _StatusIndicator extends StatelessWidget {
   final bool isRunning;
+  final double progress;
 
-  const _StatusIndicator({required this.isRunning});
+  const _StatusIndicator({required this.isRunning, required this.progress});
 
   @override
   Widget build(BuildContext context) {
+    final String label;
+    final Color color;
+
+    if (!isRunning) {
+      label = "INACTIVE";
+      color = Colors.grey;
+    } else if (progress > 0) {
+      label = "SCANNING";
+      color = Colors.green;
+    } else {
+      label = "WAITING";
+      color = Colors.orange;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isRunning
-            ? Colors.green.withOpacity(0.1)
-            : Colors.grey.withOpacity(0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isRunning ? Colors.green : Colors.grey,
+          color: color,
           width: 1,
         ),
       ),
@@ -432,12 +445,12 @@ class _StatusIndicator extends StatelessWidget {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: isRunning ? Colors.green : Colors.grey,
+              color: color,
               shape: BoxShape.circle,
-              boxShadow: isRunning
+              boxShadow: label != "INACTIVE"
                   ? [
                       BoxShadow(
-                        color: Colors.green.withOpacity(0.5),
+                        color: color.withOpacity(0.5),
                         blurRadius: 4,
                         spreadRadius: 1,
                       )
@@ -447,11 +460,11 @@ class _StatusIndicator extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            isRunning ? "ACTIVE" : "INACTIVE",
+            label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: isRunning ? Colors.green : Colors.grey,
+              color: color,
             ),
           ),
         ],
