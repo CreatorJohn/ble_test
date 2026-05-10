@@ -12,18 +12,19 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
-import 'package:isar_community/isar.dart';
 
 class BLEAdvertiser {
   static final Logger _log = Logger('BLEAdvertiser');
   static final BLEAdvertiser _instance = BLEAdvertiser._internal();
   static final StreamController<bool> _advertisingStatusController =
       StreamController.broadcast();
+
   static const serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
   static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
   static const profilePicCharUuid = '87654321-abcd-ef09-1234-567890fedcba';
   static const fullHashCharUuid = 'a1b2c3d4-e5f6-4321-8765-abcdef123456';
   static const locationCharUuid = 'f1e2d3c4-b5a6-4321-8765-abcdef123456';
+  static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
@@ -77,32 +78,13 @@ class BLEAdvertiser {
 
     _log.info('Initializing BLEAdvertiser: Requesting permissions first');
     if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
-      final permissions = await [
+      await [
         Permission.bluetoothScan,
         Permission.bluetoothAdvertise,
         Permission.bluetoothConnect,
         Permission.location,
         Permission.locationWhenInUse,
       ].request();
-
-      bool failed = false;
-      for (final permission in permissions.entries) {
-        if (permission.value.isDenied || permission.value.isPermanentlyDenied) {
-          _log.warning(
-            'Permission ${permission.key} denied/permanently denied',
-          );
-          if (permission.key != Permission.location &&
-              permission.key != Permission.locationWhenInUse) {
-            failed = true;
-          }
-        }
-      }
-
-      if (failed) {
-        _log.severe('Required core Bluetooth permissions not granted');
-        _initialized = false;
-        return false;
-      }
     }
 
     try {
@@ -166,9 +148,23 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setReadRequestCallback(
-        (deviceId, characteristicUuid, offset, value) {
+        (deviceId, characteristicUuid, offset, value) async* {
       _log.info('Read request from $deviceId for $characteristicUuid');
-      return null;
+      final charId = characteristicUuid.toLowerCase();
+
+      if (charId == profilePicCharUuid) {
+        final pic = await ProfileManager.getProfilePicture();
+        yield ReadRequestResult(value: pic ?? Uint8List(0));
+      } else if (charId == fullHashCharUuid) {
+        final hash = await ProfileManager.getProfileHash();
+        yield ReadRequestResult(value: hash);
+      } else if (charId == publicKeyCharUuid) {
+        final keyPair = await ProfileManager.getKeyPair();
+        final pubKey = await keyPair.extractPublicKey();
+        yield ReadRequestResult(value: Uint8List.fromList(pubKey.bytes));
+      } else {
+        yield ReadRequestResult(value: Uint8List(0));
+      }
     });
 
     return true;
@@ -207,13 +203,8 @@ class BLEAdvertiser {
       final profilePic = await ProfileManager.getProfilePicture();
       final fullHash = await ProfileManager.getProfileHash();
       final stableId = await ProfileManager.getStableDeviceId();
-
-      // Current location encoded for GATT read
-      final currentLocData = MeshPacketEncoder.encodeScanResponseData(
-        latitude: latitude,
-        longitude: longitude,
-        profileHash: fullHash,
-      ).sublist(0, 6);
+      final keyPair = await ProfileManager.getKeyPair();
+      final pubKey = await keyPair.extractPublicKey();
 
       await BlePeripheral.addService(
         BleService(
@@ -242,7 +233,13 @@ class BLEAdvertiser {
               uuid: locationCharUuid,
               properties: [CharacteristicProperties.read.index],
               permissions: [AttributePermissions.readable.index],
-              value: currentLocData,
+              value: MeshPacketEncoder.encodeLocation(latitude, longitude),
+            ),
+            BleCharacteristic(
+              uuid: publicKeyCharUuid,
+              properties: [CharacteristicProperties.read.index],
+              permissions: [AttributePermissions.readable.index],
+              value: Uint8List.fromList(pubKey.bytes),
             ),
           ],
         ),
@@ -250,9 +247,6 @@ class BLEAdvertiser {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // 1. Main Packet Data (Exactly 6 bytes)
-      // Fits perfectly alongside Flags (3b) and Service UUID (18b).
-      // Total Primary Packet: 3 + 18 + (4 overhead + 6 payload) = 31 bytes.
       final mainPayload = MeshPacketEncoder.encodeMainPacket(
         stableId: stableId,
         profileHash: fullHash,
@@ -260,27 +254,23 @@ class BLEAdvertiser {
         isOnline: isOnline,
       );
 
-      // 2. Scan Response Data (12 bytes)
-      // This will be automatically moved to the Scan Response because the main packet is full.
       final scanResponseMetadata = MeshPacketEncoder.encodeScanResponseData(
         latitude: latitude,
         longitude: longitude,
         profileHash: fullHash,
       );
 
-      // 3. Prepend metadata to name.
-      // Since the main packet is already full (31 bytes), any name provided
-      // will be automatically pushed to the Scan Response by the system.
       final nameBytes = Uint8List.fromList(localName.codeUnits);
-      final combinedName = Uint8List(scanResponseMetadata.length + nameBytes.length);
-      combinedName.setRange(0, scanResponseMetadata.length, scanResponseMetadata);
+      final combinedName =
+          Uint8List(scanResponseMetadata.length + nameBytes.length);
+      combinedName.setRange(
+          0, scanResponseMetadata.length, scanResponseMetadata);
       combinedName.setRange(
           scanResponseMetadata.length, combinedName.length, nameBytes);
 
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
-        // The name is automatically moved to Scan Response because ManufacturerData fills the Primary Packet.
         localName: String.fromCharCodes(combinedName),
         manufacturerData: ManufacturerData(
           manufacturerId: 0xFFFF,
