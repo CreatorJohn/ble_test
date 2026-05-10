@@ -12,7 +12,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
-import 'package:isar_community/isar.dart';
 
 class BLEAdvertiser {
   static final Logger _log = Logger('BLEAdvertiser');
@@ -41,27 +40,20 @@ class BLEAdvertiser {
   Future<bool> _waitForBluetooth() async {
     _log.info("Checking the bluetooth...");
 
-    BluetoothAdapterState state = await FlutterBluePlus.adapterState
-        .firstWhere((s) => s != BluetoothAdapterState.unknown)
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => BluetoothAdapterState.unknown,
-        );
+    BluetoothAdapterState state = FlutterBluePlus.adapterStateNow;
+    _log.info("Current Bluetooth State: $state");
 
     if (state == BluetoothAdapterState.on) {
       _log.fine("Bluetooth is already ON");
       return true;
     }
 
-    if (state == BluetoothAdapterState.off) {
-      _log.info("Bluetooth is OFF, trying to turn it ON...");
-      try {
-        await FlutterBluePlus.turnOn();
-      } catch (e) {
-        _log.warning("Could not turn on Bluetooth automatically: $e");
-      }
+    if (state == BluetoothAdapterState.off ||
+        state == BluetoothAdapterState.turningOff) {
+      _log.info("Bluetooth reported as $state, attempting to wait for ON...");
     }
 
+    // Wait for ON state
     try {
       await FlutterBluePlus.adapterState
           .where((s) => s == BluetoothAdapterState.on)
@@ -70,10 +62,11 @@ class BLEAdvertiser {
       _log.fine("Bluetooth is now ON");
       return true;
     } catch (_) {
-      _log.severe(
-        "Bluetooth failed to turn on or remains in state: ${FlutterBluePlus.adapterStateNow}",
+      _log.warning(
+        "Bluetooth remains in state: ${FlutterBluePlus.adapterStateNow}. Continuing anyway for Chromebook reliability.",
       );
-      return false;
+      // On Chromebooks, the reported state is often incorrect. We return true to allow the attempt.
+      return true;
     }
   }
 
@@ -101,16 +94,16 @@ class BLEAdvertiser {
         await BlePeripheral.initialize();
       }
     } catch (e) {
-      _log.severe('BlePeripheral.initialize() failed: $e');
+      _log.warning(
+          'BlePeripheral.initialize() failed (Advertising may be unsupported): $e');
     }
 
     if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
-      final bluetoothOn = await _waitForBluetooth();
-      if (!bluetoothOn) {
-        _initialized = false;
-        return false;
-      }
+      // We log but don't fail, to support Chromebook quirks
+      await _waitForBluetooth();
     }
+
+    _log.fine('Setting up BLE callbacks');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
       _log.info('Advertising status updated: isAdvertising=$isAdvertising');
@@ -131,6 +124,7 @@ class BLEAdvertiser {
         if (value != null) {
           final isar = IsarService();
           if (isar.isOpen) {
+            // Run async logic in a fire-and-forget manner
             isar.db.foundDevices
                 .where()
                 .remoteIdEqualTo(deviceId)
@@ -152,9 +146,23 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setReadRequestCallback(
-        (deviceId, characteristicUuid, offset, value) {
+        (deviceId, characteristicUuid, offset, value) async* {
       _log.info('Read request from $deviceId for $characteristicUuid');
-      return null;
+      final charId = characteristicUuid.toLowerCase();
+
+      if (charId == profilePicCharUuid) {
+        final pic = await ProfileManager.getProfilePicture();
+        yield ReadRequestResult(value: pic ?? Uint8List(0));
+      } else if (charId == fullHashCharUuid) {
+        final hash = await ProfileManager.getProfileHash();
+        yield ReadRequestResult(value: hash);
+      } else if (charId == publicKeyCharUuid) {
+        final keyPair = await ProfileManager.getKeyPair();
+        final pubKey = await keyPair.extractPublicKey();
+        yield ReadRequestResult(value: Uint8List.fromList(pubKey.bytes));
+      } else {
+        yield ReadRequestResult(value: Uint8List(0));
+      }
     });
 
     return true;
@@ -180,8 +188,13 @@ class BLEAdvertiser {
         if (!success) return;
       }
 
-      final bluetoothOn = await _waitForBluetooth();
-      if (!bluetoothOn) return;
+      // Check if peripheral mode is actually supported by hardware
+      if (Platform.isAndroid && !await BlePeripheral.isSupported()) {
+        _log.warning('Hardware does not support Peripheral Mode (Advertising)');
+        return;
+      }
+
+      await _waitForBluetooth();
 
       _log.info('Resetting BLE stack before starting...');
       try {
