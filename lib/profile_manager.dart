@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -9,6 +11,8 @@ class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
   static const String _deviceIdKey = 'stable_device_id_4';
   static const String _imageFileName = 'profile_pic.png';
+  static const String _privateKeyKey = 'secure_private_key_v1';
+  static const String _publicKeyKey = 'public_key_v1';
 
   static Future<int> getStableDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -23,6 +27,29 @@ class ProfileManager {
     return deviceId;
   }
 
+  static Future<SimpleKeyPair> getKeyPair() async {
+    final algorithm = X25519();
+    final prefs = await SharedPreferences.getInstance();
+    final privBase64 = prefs.getString(_privateKeyKey);
+
+    if (privBase64 == null) {
+      final keyPair = await algorithm.newKeyPair();
+      final privBytes = await keyPair.extractPrivateKeyBytes();
+      final pubKey = await keyPair.extractPublicKey();
+
+      await prefs.setString(_privateKeyKey, base64Encode(privBytes));
+      await prefs.setString(_publicKeyKey, base64Encode(pubKey.bytes));
+      return keyPair;
+    }
+
+    return SimpleKeyPairData(
+      base64Decode(privBase64),
+      publicKey: SimplePublicKey(base64Decode(prefs.getString(_publicKeyKey)!),
+          type: KeyPairType.x25519),
+      type: KeyPairType.x25519,
+    );
+  }
+
   /// Gets the 6-byte hash of the current profile picture.
   /// If no picture exists, it returns a default hash.
   static Future<Uint8List> getProfileHash() async {
@@ -31,7 +58,7 @@ class ProfileManager {
       // Default hash for "no picture"
       return Uint8List.fromList([0, 0, 0, 0, 0, 0]);
     }
-    
+
     final digest = sha256.convert(bytes);
     return Uint8List.fromList(digest.bytes.sublist(0, 6));
   }
@@ -41,11 +68,14 @@ class ProfileManager {
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$_imageFileName');
     await file.writeAsBytes(bytes);
-    
+
     // Calculate and cache the new hash
     final digest = sha256.convert(bytes);
-    final hashHex = digest.bytes.sublist(0, 6).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    
+    final hashHex = digest.bytes
+        .sublist(0, 6)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_hashKey, hashHex);
   }

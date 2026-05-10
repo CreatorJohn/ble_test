@@ -23,5 +23,7 @@ class FoundDevice {
 
   List<int>? profilePicture;
 
+  List<int>? publicKey; // 32-byte X25519 public key
+
   DateTime? lastPictureSync; // Time-based cache invalidation
 }

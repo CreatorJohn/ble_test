@@ -38,13 +38,18 @@ const FoundDeviceSchema = CollectionSchema(
       name: r'profilePicture',
       type: IsarType.longList,
     ),
-    r'remoteId': PropertySchema(
+    r'publicKey': PropertySchema(
       id: 5,
+      name: r'publicKey',
+      type: IsarType.longList,
+    ),
+    r'remoteId': PropertySchema(
+      id: 6,
       name: r'remoteId',
       type: IsarType.string,
     ),
-    r'rssi': PropertySchema(id: 6, name: r'rssi', type: IsarType.long),
-    r'stableId': PropertySchema(id: 7, name: r'stableId', type: IsarType.long),
+    r'rssi': PropertySchema(id: 7, name: r'rssi', type: IsarType.long),
+    r'stableId': PropertySchema(id: 8, name: r'stableId', type: IsarType.long),
   },
 
   estimateSize: _foundDeviceEstimateSize,
@@ -126,6 +131,12 @@ int _foundDeviceEstimateSize(
       bytesCount += 3 + value.length * 8;
     }
   }
+  {
+    final value = object.publicKey;
+    if (value != null) {
+      bytesCount += 3 + value.length * 8;
+    }
+  }
   bytesCount += 3 + object.remoteId.length * 3;
   return bytesCount;
 }
@@ -141,9 +152,10 @@ void _foundDeviceSerialize(
   writer.writeString(offsets[2], object.name);
   writer.writeString(offsets[3], object.profileHash);
   writer.writeLongList(offsets[4], object.profilePicture);
-  writer.writeString(offsets[5], object.remoteId);
-  writer.writeLong(offsets[6], object.rssi);
-  writer.writeLong(offsets[7], object.stableId);
+  writer.writeLongList(offsets[5], object.publicKey);
+  writer.writeString(offsets[6], object.remoteId);
+  writer.writeLong(offsets[7], object.rssi);
+  writer.writeLong(offsets[8], object.stableId);
 }
 
 FoundDevice _foundDeviceDeserialize(
@@ -159,9 +171,10 @@ FoundDevice _foundDeviceDeserialize(
   object.name = reader.readStringOrNull(offsets[2]);
   object.profileHash = reader.readStringOrNull(offsets[3]);
   object.profilePicture = reader.readLongList(offsets[4]);
-  object.remoteId = reader.readString(offsets[5]);
-  object.rssi = reader.readLong(offsets[6]);
-  object.stableId = reader.readLong(offsets[7]);
+  object.publicKey = reader.readLongList(offsets[5]);
+  object.remoteId = reader.readString(offsets[6]);
+  object.rssi = reader.readLong(offsets[7]);
+  object.stableId = reader.readLong(offsets[8]);
   return object;
 }
 
@@ -183,10 +196,12 @@ P _foundDeviceDeserializeProp<P>(
     case 4:
       return (reader.readLongList(offset)) as P;
     case 5:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongList(offset)) as P;
     case 6:
-      return (reader.readLong(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 7:
+      return (reader.readLong(offset)) as P;
+    case 8:
       return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1232,6 +1247,132 @@ extension FoundDeviceQueryFilter
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'publicKey'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'publicKey'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyElementEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'publicKey', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyElementGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'publicKey',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyElementLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'publicKey',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyElementBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'publicKey',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyLengthEqualTo(int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'publicKey', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'publicKey', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'publicKey', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyLengthLessThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'publicKey', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'publicKey', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  publicKeyLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'publicKey',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
+      );
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> remoteIdEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -1722,6 +1863,12 @@ extension FoundDeviceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByPublicKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'publicKey');
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByRemoteId({
     bool caseSensitive = true,
   }) {
@@ -1780,6 +1927,12 @@ extension FoundDeviceQueryProperty
   profilePictureProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'profilePicture');
+    });
+  }
+
+  QueryBuilder<FoundDevice, List<int>?, QQueryOperations> publicKeyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'publicKey');
     });
   }
 
