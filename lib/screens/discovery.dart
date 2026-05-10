@@ -296,10 +296,20 @@ class DiscoveryScreen extends ConsumerWidget {
         }
 
         if (messageChar != null) {
-          final payload = utf8.encode(content);
+          final encryptedPayload = await MessageHandler.getEncryptedPayload(
+              device.stableId, content);
+
+          if (encryptedPayload == null) {
+            scaffoldMessenger.showSnackBar(
+              const SnackBar(
+                  content: Text("Encryption failed: Public key missing.")),
+            );
+            return;
+          }
+
           final messageId = Random().nextInt(256);
           final chunks = ChunkedTransferManager.generateChunks(
-              Uint8List.fromList(payload), messageId);
+              encryptedPayload, messageId);
 
           int sent = 0;
           for (final chunk in chunks) {
@@ -315,7 +325,7 @@ class DiscoveryScreen extends ConsumerWidget {
             content: content,
           );
           scaffoldMessenger.showSnackBar(
-            SnackBar(content: Text("Message sent! ($sent chunks)")),
+            SnackBar(content: Text("Encrypted message sent! ($sent chunks)")),
           );
         } else {
           scaffoldMessenger.showSnackBar(
