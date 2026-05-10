@@ -29,10 +29,6 @@ class BLEAdvertiser {
   static bool _isAdvertising = false;
   static bool _initialized = false;
 
-  // Stored state for GATT reads
-  static double _currentLat = 0.0;
-  static double _currentLon = 0.0;
-
   factory BLEAdvertiser() => _instance;
 
   BLEAdvertiser._internal();
@@ -53,7 +49,6 @@ class BLEAdvertiser {
       _log.info("Bluetooth reported as $state, attempting to wait for ON...");
     }
 
-    // Wait for ON state
     try {
       await FlutterBluePlus.adapterState
           .where((s) => s == BluetoothAdapterState.on)
@@ -65,7 +60,6 @@ class BLEAdvertiser {
       _log.warning(
         "Bluetooth remains in state: ${FlutterBluePlus.adapterStateNow}. Continuing anyway for Chromebook reliability.",
       );
-      // On Chromebooks, the reported state is often incorrect. We return true to allow the attempt.
       return true;
     }
   }
@@ -99,7 +93,6 @@ class BLEAdvertiser {
     }
 
     if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
-      // We log but don't fail, to support Chromebook quirks
       await _waitForBluetooth();
     }
 
@@ -124,12 +117,7 @@ class BLEAdvertiser {
         if (value != null) {
           final isar = IsarService();
           if (isar.isOpen) {
-            // Fix: findFirst is an extension, use correct filter query
-            isar.db.foundDevices
-                .filter()
-                .remoteIdEqualTo(deviceId)
-                .findFirst()
-                .then((device) {
+            isar.findDeviceByRemoteId(deviceId).then((device) {
               if (device != null) {
                 MessageHandler.handleIncomingMessage(
                   senderStableId: device.stableId,
@@ -148,12 +136,6 @@ class BLEAdvertiser {
     BlePeripheral.setReadRequestCallback(
         (deviceId, characteristicUuid, offset, value) {
       _log.info('Read request from $deviceId for $characteristicUuid');
-      final charId = characteristicUuid.toLowerCase();
-
-      // Note: ReadRequestCallback must be synchronous or return Future, not Stream.
-      // But we can return a ReadRequestResult immediately if we have the data.
-      // Since ProfileManager is async, we may need to pre-fetch or handle differently.
-      // For now, let's just use the current values or return null to use the static characteristic value.
       return null;
     });
 
@@ -171,16 +153,12 @@ class BLEAdvertiser {
     double longitude = 0.0,
     bool isOnline = false,
   }) async {
-    _currentLat = latitude;
-    _currentLon = longitude;
-
     try {
       if (_initialized == false) {
         bool success = await initialize();
         if (!success) return;
       }
 
-      // Check if peripheral mode is actually supported by hardware
       if (Platform.isAndroid && !await BlePeripheral.isSupported()) {
         _log.warning('Hardware does not support Peripheral Mode (Advertising)');
         return;

@@ -50,6 +50,10 @@ class IsarService {
     });
   }
 
+  Future<FoundDevice?> findDeviceByRemoteId(String remoteId) async {
+    return await db.foundDevices.filter().remoteIdEqualTo(remoteId).findFirst();
+  }
+
   Future<void> clearDevices() async {
     await db.writeTxn(() async {
       await db.foundDevices.clear();
