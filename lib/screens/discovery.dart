@@ -9,6 +9,7 @@ import 'package:ble_test/components/system_health_card.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/message_handler.dart';
+import 'package:ble_test/providers/advertising_name.dart';
 import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
@@ -56,9 +57,14 @@ class DiscoveryScreen extends ConsumerWidget {
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   onPressed: () {
-                    FlutterBackgroundService().invoke("setAdvertisingName", {"name": "CHROMEBOOK"});
+                    final adName =
+                        ref.read(advertisingNameProvider).value ?? "BLE Test";
+                    FlutterBackgroundService()
+                        .invoke("setAdvertisingName", {"name": adName});
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Attempting manual advertising start...")),
+                      SnackBar(
+                          content: Text(
+                              "Attempting manual advertising start with: $adName")),
                     );
                   },
                   icon: const Icon(Icons.record_voice_over),
