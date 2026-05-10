@@ -54,6 +54,17 @@ class DiscoveryScreen extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () {
+                    FlutterBackgroundService().invoke("setAdvertisingName", {"name": "CHROMEBOOK"});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Attempting manual advertising start...")),
+                    );
+                  },
+                  icon: const Icon(Icons.record_voice_over),
+                  tooltip: "Force Advertising Start",
+                ),
+                const SizedBox(width: 8),
                 _StatusIndicator(isRunning: isRunning, progress: progress),
               ],
             ),
@@ -427,6 +438,8 @@ class _StatusIndicator extends StatelessWidget {
       label = "WAITING";
       color = Colors.orange;
     }
+    
+    // Add advertising check if possible (requires a provider)
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
