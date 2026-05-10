@@ -2,6 +2,7 @@ import 'package:ble_test/providers/system_health.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class SystemHealthCard extends ConsumerWidget {
@@ -63,6 +64,15 @@ class SystemHealthCard extends ConsumerWidget {
                 buttonLabel: "Grant",
                 onPressed: () async {
                   await Permission.locationAlways.request();
+                  ref.read(systemHealthProvider.notifier).checkHealth();
+                },
+              ),
+            if (!health.isLocationEnabled)
+              _ActionItem(
+                label: "System Location is OFF",
+                buttonLabel: "Enable",
+                onPressed: () async {
+                  await Geolocator.openLocationSettings();
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),

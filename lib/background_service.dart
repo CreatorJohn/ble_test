@@ -107,12 +107,15 @@ void onStart(ServiceInstance service) async {
 
     for (final ScanResult result in results) {
       final advData = result.advertisementData;
-      
-      final meshData = advData.manufacturerData[0xFEFF];
-      if (meshData == null || meshData.length < 6) continue;
+
+      // Manufacturer ID 0xFFFF used in our BLEAdvertiser
+      final meshData = advData.manufacturerData[0xFFFF];
+      if (meshData == null || meshData.length < 5) continue;
 
       final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
       final stableId = buffer.getUint32(0, Endian.big);
+      // Version Tag is the top 6 bits of the 5th byte (index 4)
+      final currentVersionTag = (meshData[4] >> 2) & 0x3F;
 
       final device = FoundDevice()
         ..stableId = stableId
@@ -133,27 +136,37 @@ void onStart(ServiceInstance service) async {
           device.id = existing.id;
           device.profilePicture = existing.profilePicture;
           device.lastPictureSync = existing.lastPictureSync;
-          
-          // Check if version tag (bits 4-5 of manufacturer data) changed
-          // Or if 24 hours passed
-          final currentVersionTag = buffer.getUint16(4, Endian.big) >> 2;
-          // We'll just compare against the last sync time for simplicity in this task
-          bool needsForcedSync = existing.lastPictureSync == null || 
+          device.profileHash = existing.profileHash;
+
+          // Compare stored hash's prefix with currentVersionTag
+          int prevVersionTag = -1;
+          if (existing.profileHash != null) {
+            final hex = existing.profileHash!;
+            if (hex.length >= 2) {
+              final b1 = int.parse(hex.substring(0, 2), radix: 16);
+              prevVersionTag = (b1 >> 2) & 0x3F;
+            }
+          }
+
+          bool hashChanged = prevVersionTag != currentVersionTag;
+          bool needsForcedSync = existing.lastPictureSync == null ||
               DateTime.now().difference(existing.lastPictureSync!).inHours >= 24;
 
-          if (needsForcedSync) {
-             needsMetadataUpdate = true;
+          if (hashChanged || needsForcedSync) {
+            needsMetadataUpdate = true;
           }
         } else {
           needsMetadataUpdate = true;
         }
 
         if (needsMetadataUpdate) {
-           _fetchFullMetadata(result.device, isarService, stableId);
+          _fetchFullMetadata(result.device, isarService, stableId);
         }
 
         await isarService.putFoundDevice(device);
-      } catch (e) {}
+      } catch (e) {
+        // Handle error
+      }
     }
   });
 
@@ -165,15 +178,30 @@ void onStart(ServiceInstance service) async {
     if (FlutterBluePlus.isScanningNow && scanStartTime != null) {
       final elapsed = DateTime.now().difference(scanStartTime!);
       final progress = elapsed.inMilliseconds / scanDuration.inMilliseconds;
-      service.invoke('updateProgress', {'value': progress.clamp(0.0, 1.0)});
+      final clamped = progress.clamp(0.0, 1.0);
+      service.invoke('updateProgress', {'value': clamped});
     } else {
       service.invoke('updateProgress', {'value': 0.0});
+      service.invoke("updateBackgroundServiceStatus", {"active": false});
     }
   });
 
-  Timer.periodic(waitDuration + scanDuration, (timer) async {
+  Future<void> startSafeScan() async {
     try {
+      // Chromebook fix: Ensure location service is enabled
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (service is AndroidServiceInstance) {
+          service.setForegroundNotificationInfo(
+            title: "BLE Scanner - Inactive",
+            content: "Please enable system location services.",
+          );
+        }
+        return;
+      }
+
       service.invoke("updateAdvertisingName", {"name": currentName});
+      service.invoke("updateBackgroundServiceStatus", {"active": true});
+
       if (await FlutterBluePlus.isSupported == false) return;
       if (FlutterBluePlus.isScanningNow == false) {
         scanStartTime = DateTime.now();
@@ -186,16 +214,13 @@ void onStart(ServiceInstance service) async {
     } catch (e) {
       scanStartTime = null;
     }
+  }
+
+  Timer.periodic(waitDuration + scanDuration, (timer) async {
+    await startSafeScan();
   });
 
-  if (await FlutterBluePlus.isSupported) {
-    scanStartTime = DateTime.now();
-    await FlutterBluePlus.startScan(
-      timeout: scanDuration,
-      withServices: [Guid(BLEAdvertiser.serviceUuid)],
-      androidScanMode: AndroidScanMode.lowPower,
-    );
-  }
+  await startSafeScan();
 
   service.on('stopService').listen((event) async {
     await advertiser.stopAdvertising();
@@ -220,44 +245,52 @@ void onStart(ServiceInstance service) async {
 }
 
 Future<void> _fetchFullMetadata(
-    BluetoothDevice device, IsarService isar, int stableId) async {
+  BluetoothDevice device,
+  IsarService isar,
+  int stableId,
+) async {
   try {
-    await device.connect(timeout: const Duration(seconds: 8), license: License.free);
+    await device.connect(
+      timeout: const Duration(seconds: 8),
+      license: License.free,
+    );
     final services = await device.discoverServices();
     BluetoothCharacteristic? picChar;
     BluetoothCharacteristic? hashChar;
-    BluetoothCharacteristic? locChar;
 
     for (final s in services) {
-      if (s.uuid.toString().toLowerCase() == BLEAdvertiser.serviceUuid.toLowerCase()) {
+      if (s.uuid.toString().toLowerCase() ==
+          BLEAdvertiser.serviceUuid.toLowerCase()) {
         for (final c in s.characteristics) {
           final charId = c.uuid.toString().toLowerCase();
-          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) picChar = c;
-          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) hashChar = c;
-          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase()) locChar = c;
+          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
+            picChar = c;
+          }
+          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
+            hashChar = c;
+          }
         }
       }
     }
 
     if (hashChar != null) {
       final hashBytes = await hashChar.read();
-      final hashHex = hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-      
-      final existing = await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst();
+      final hashHex =
+          hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+      final existing = await isar.db.foundDevices
+          .where()
+          .stableIdEqualTo(stableId)
+          .findFirst();
+
       if (existing != null) {
-        existing.profileHash = hashHex;
-        
-        // Only download pic if hash actually changed or null
-        if (picChar != null && (existing.profilePicture == null || existing.profileHash != hashHex)) {
+        if (picChar != null &&
+            (existing.profilePicture == null ||
+                existing.profileHash != hashHex)) {
           existing.profilePicture = await picChar.read();
         }
-        
-        if (locChar != null) {
-          // Update location from GATT
-          final locData = await locChar.read();
-          // We could decode here, but for the UI we'll just save the time
-        }
 
+        existing.profileHash = hashHex;
         existing.lastPictureSync = DateTime.now();
         await isar.putFoundDevice(existing);
       }

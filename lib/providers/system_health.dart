@@ -1,5 +1,6 @@
 import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -10,6 +11,7 @@ class SystemHealthState {
   final bool isBatterySaverOn;
   final bool hasLocationAlways;
   final bool hasNotificationPermission;
+  final bool isLocationEnabled;
   final bool isChecking;
 
   SystemHealthState({
@@ -17,6 +19,7 @@ class SystemHealthState {
     required this.isBatterySaverOn,
     required this.hasLocationAlways,
     required this.hasNotificationPermission,
+    required this.isLocationEnabled,
     this.isChecking = false,
   });
 
@@ -24,7 +27,8 @@ class SystemHealthState {
       !isBatteryOptimized &&
       !isBatterySaverOn &&
       hasLocationAlways &&
-      hasNotificationPermission;
+      hasNotificationPermission &&
+      isLocationEnabled;
 }
 
 @riverpod
@@ -37,6 +41,7 @@ class SystemHealth extends _$SystemHealth {
       isBatterySaverOn: true,
       hasLocationAlways: false,
       hasNotificationPermission: false,
+      isLocationEnabled: false,
       isChecking: true,
     );
   }
@@ -47,6 +52,7 @@ class SystemHealth extends _$SystemHealth {
       isBatterySaverOn: state.isBatterySaverOn,
       hasLocationAlways: state.hasLocationAlways,
       hasNotificationPermission: state.hasNotificationPermission,
+      isLocationEnabled: state.isLocationEnabled,
       isChecking: true,
     );
 
@@ -56,12 +62,14 @@ class SystemHealth extends _$SystemHealth {
         await DisableBatteryOptimization.isBatteryOptimizationDisabled ?? false;
     final locationStatus = await Permission.locationAlways.status;
     final notificationStatus = await Permission.notification.status;
+    final isLocationEnabled = await Geolocator.isLocationServiceEnabled();
 
     state = SystemHealthState(
       isBatteryOptimized: !isOptimized,
       isBatterySaverOn: isBatterySaverOn,
       hasLocationAlways: locationStatus.isGranted,
       hasNotificationPermission: notificationStatus.isGranted,
+      isLocationEnabled: isLocationEnabled,
       isChecking: false,
     );
   }
