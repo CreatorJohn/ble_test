@@ -28,6 +28,7 @@ class BLEAdvertiser {
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
+  static bool _isHardwareUnsupported = false;
 
   factory BLEAdvertiser() => _instance;
 
@@ -153,6 +154,8 @@ class BLEAdvertiser {
     double longitude = 0.0,
     bool isOnline = false,
   }) async {
+    if (_isHardwareUnsupported) return;
+
     try {
       if (_initialized == false) {
         bool success = await initialize();
@@ -161,6 +164,7 @@ class BLEAdvertiser {
 
       if (Platform.isAndroid && !await BlePeripheral.isSupported()) {
         _log.warning('Hardware does not support Peripheral Mode (Advertising)');
+        _isHardwareUnsupported = true;
         return;
       }
 
@@ -254,7 +258,13 @@ class BLEAdvertiser {
         ),
       );
     } catch (e) {
-      _log.severe('Failed to start advertising: $e');
+      if (e.toString().contains("UnsupportedOperationException") || 
+          e.toString().contains("Advertising not supported")) {
+        _log.warning('Detected unsupported advertising hardware. Silencing future attempts.');
+        _isHardwareUnsupported = true;
+      } else {
+        _log.severe('Failed to start advertising: $e');
+      }
       await BlePeripheral.stopAdvertising();
     }
   }

@@ -228,12 +228,32 @@ void onStart(ServiceInstance service) async {
       if (!isScanning) {
         log.info('Starting BLE scan (timeout: 20s)...');
         scanStartTime = DateTime.now();
-        await FlutterBluePlus.startScan(
-          timeout: scanDuration,
-          withServices: [Guid(BLEAdvertiser.serviceUuid)],
-          androidScanMode: AndroidScanMode.lowPower,
-        );
-        log.info('BLE scan started successfully');
+        try {
+          await FlutterBluePlus.startScan(
+            timeout: scanDuration,
+            withServices: [Guid(BLEAdvertiser.serviceUuid)],
+            androidScanMode: AndroidScanMode.lowPower,
+          );
+          log.info('BLE scan started successfully');
+        } catch (e) {
+          if (e.toString().contains("Bluetooth must be turned on")) {
+            log.warning('Chromebook Bluetooth state mismatch detected. Attempting to force turnOn() and retry...');
+            try {
+              await FlutterBluePlus.turnOn();
+              await Future.delayed(const Duration(seconds: 2));
+              await FlutterBluePlus.startScan(
+                timeout: scanDuration,
+                withServices: [Guid(BLEAdvertiser.serviceUuid)],
+                androidScanMode: AndroidScanMode.lowPower,
+              );
+              log.info('BLE scan started successfully after force turnOn()');
+            } catch (retryError) {
+              log.severe('Retry startScan failed: $retryError');
+            }
+          } else {
+            rethrow;
+          }
+        }
       }
     } catch (e) {
       log.severe('startSafeScan failed: $e');
