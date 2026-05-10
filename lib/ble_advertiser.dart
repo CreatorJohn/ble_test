@@ -12,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logging/logging.dart' show Logger;
+import 'package:isar_community/isar.dart';
 
 class BLEAdvertiser {
   static final Logger _log = Logger('BLEAdvertiser');
@@ -28,6 +29,10 @@ class BLEAdvertiser {
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
+
+  // Stored state for GATT reads
+  static double _currentLat = 0.0;
+  static double _currentLon = 0.0;
 
   factory BLEAdvertiser() => _instance;
 
@@ -126,8 +131,7 @@ class BLEAdvertiser {
         if (value != null) {
           final isar = IsarService();
           if (isar.isOpen) {
-            isar.db
-                .collection<FoundDevice>()
+            isar.db.foundDevices
                 .where()
                 .remoteIdEqualTo(deviceId)
                 .findFirst()
@@ -148,23 +152,9 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setReadRequestCallback(
-        (deviceId, characteristicUuid, offset, value) async* {
+        (deviceId, characteristicUuid, offset, value) {
       _log.info('Read request from $deviceId for $characteristicUuid');
-      final charId = characteristicUuid.toLowerCase();
-
-      if (charId == profilePicCharUuid) {
-        final pic = await ProfileManager.getProfilePicture();
-        yield ReadRequestResult(value: pic ?? Uint8List(0));
-      } else if (charId == fullHashCharUuid) {
-        final hash = await ProfileManager.getProfileHash();
-        yield ReadRequestResult(value: hash);
-      } else if (charId == publicKeyCharUuid) {
-        final keyPair = await ProfileManager.getKeyPair();
-        final pubKey = await keyPair.extractPublicKey();
-        yield ReadRequestResult(value: Uint8List.fromList(pubKey.bytes));
-      } else {
-        yield ReadRequestResult(value: Uint8List(0));
-      }
+      return null;
     });
 
     return true;
@@ -181,6 +171,9 @@ class BLEAdvertiser {
     double longitude = 0.0,
     bool isOnline = false,
   }) async {
+    _currentLat = latitude;
+    _currentLon = longitude;
+
     try {
       if (_initialized == false) {
         bool success = await initialize();
