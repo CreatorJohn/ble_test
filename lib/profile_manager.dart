@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -11,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
@@ -50,9 +50,16 @@ class ProfileManager {
     if (croppedFile == null) return;
 
     final bytes = await croppedFile.readAsBytes();
-    final decodedImage = img.decodeImage(bytes);
+    final pngBytes = await compute(_processImage, bytes);
+    
+    if (pngBytes != null) {
+      await saveProfilePicture(pngBytes);
+    }
+  }
 
-    if (decodedImage == null) return;
+  static Uint8List? _processImage(Uint8List bytes) {
+    final decodedImage = img.decodeImage(bytes);
+    if (decodedImage == null) return null;
 
     // Resize to 256x256
     final img.Image resized = img.copyResize(
@@ -62,8 +69,7 @@ class ProfileManager {
       interpolation: img.Interpolation.linear,
     );
 
-    final Uint8List pngBytes = Uint8List.fromList(img.encodePng(resized));
-    await saveProfilePicture(pngBytes);
+    return Uint8List.fromList(img.encodePng(resized));
   }
 
   static Future<int> getStableDeviceId() async {
