@@ -21,6 +21,8 @@ class FoundDevice {
   @Index()
   String? profileHash;
 
+  int? versionTag; // 14-bit hash prefix from advertisement
+
   List<int>? profilePicture;
 
   List<int>? publicKey; // 32-byte X25519 public key

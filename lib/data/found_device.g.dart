@@ -50,6 +50,11 @@ const FoundDeviceSchema = CollectionSchema(
     ),
     r'rssi': PropertySchema(id: 7, name: r'rssi', type: IsarType.long),
     r'stableId': PropertySchema(id: 8, name: r'stableId', type: IsarType.long),
+    r'versionTag': PropertySchema(
+      id: 9,
+      name: r'versionTag',
+      type: IsarType.long,
+    ),
   },
 
   estimateSize: _foundDeviceEstimateSize,
@@ -156,6 +161,7 @@ void _foundDeviceSerialize(
   writer.writeString(offsets[6], object.remoteId);
   writer.writeLong(offsets[7], object.rssi);
   writer.writeLong(offsets[8], object.stableId);
+  writer.writeLong(offsets[9], object.versionTag);
 }
 
 FoundDevice _foundDeviceDeserialize(
@@ -175,6 +181,7 @@ FoundDevice _foundDeviceDeserialize(
   object.remoteId = reader.readString(offsets[6]);
   object.rssi = reader.readLong(offsets[7]);
   object.stableId = reader.readLong(offsets[8]);
+  object.versionTag = reader.readLongOrNull(offsets[9]);
   return object;
 }
 
@@ -203,6 +210,8 @@ P _foundDeviceDeserializeProp<P>(
       return (reader.readLong(offset)) as P;
     case 8:
       return (reader.readLong(offset)) as P;
+    case 9:
+      return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1630,6 +1639,79 @@ extension FoundDeviceQueryFilter
       );
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'versionTag'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'versionTag'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'versionTag', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'versionTag',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'versionTag',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  versionTagBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'versionTag',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
 }
 
 extension FoundDeviceQueryObject
@@ -1722,6 +1804,18 @@ extension FoundDeviceQuerySortBy
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByStableIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'stableId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByVersionTag() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionTag', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByVersionTagDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionTag', Sort.desc);
     });
   }
 }
@@ -1824,6 +1918,18 @@ extension FoundDeviceQuerySortThenBy
       return query.addSortBy(r'stableId', Sort.desc);
     });
   }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByVersionTag() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionTag', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByVersionTagDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'versionTag', Sort.desc);
+    });
+  }
 }
 
 extension FoundDeviceQueryWhereDistinct
@@ -1886,6 +1992,12 @@ extension FoundDeviceQueryWhereDistinct
   QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByStableId() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'stableId');
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByVersionTag() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'versionTag');
     });
   }
 }
@@ -1951,6 +2063,12 @@ extension FoundDeviceQueryProperty
   QueryBuilder<FoundDevice, int, QQueryOperations> stableIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'stableId');
+    });
+  }
+
+  QueryBuilder<FoundDevice, int?, QQueryOperations> versionTagProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'versionTag');
     });
   }
 }

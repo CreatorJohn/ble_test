@@ -19,7 +19,9 @@ Stream<bool> isScanning(Ref ref) {
 @riverpod
 Stream<bool> isServiceRunning(Ref ref) {
   final service = FlutterBackgroundService();
-  return Stream.periodic(const Duration(seconds: 1)).asyncMap((_) => service.isRunning());
+  return Stream.periodic(
+    const Duration(seconds: 1),
+  ).asyncMap((_) => service.isRunning());
 }
 
 @riverpod

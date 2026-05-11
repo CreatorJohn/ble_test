@@ -23,6 +23,7 @@ class DiscoveryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isRunning = ref.watch(isServiceRunningProvider).value ?? false;
+    final isScanning = ref.watch(isScanningProvider).value ?? false;
     final progress = ref.watch(scanProgressProvider).value ?? 0.0;
 
     return ScaffoldWrapper(
@@ -55,36 +56,69 @@ class DiscoveryScreen extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  onPressed: () {
-                    final adName =
-                        ref.read(advertisingNameProvider).value ?? "BLE Test";
-                    FlutterBackgroundService()
-                        .invoke("setAdvertisingName", {"name": adName});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              "Attempting manual advertising start with: $adName")),
+                StreamBuilder(
+                  stream: BLEAdvertiser().advertisingStatusStream,
+                  builder: (context, snapshot) {
+                    final advertising = snapshot.data ?? false;
+
+                    return IconButton.filledTonal(
+                      onPressed: () {
+                        if (advertising) {
+                          FlutterBackgroundService().invoke("stopAdvertising");
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Stopping advertisement")),
+                          );
+                        } else {
+                          final adName =
+                              ref.read(advertisingNameProvider).value ??
+                              "BLE Test";
+                          FlutterBackgroundService().invoke(
+                            "setAdvertisingName",
+                            {"name": adName},
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Attempting manual advertising start with: $adName",
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        advertising
+                            ? Icons.record_voice_over
+                            : Icons.play_disabled,
+                      ),
+                      tooltip:
+                          "Force Advertising ${advertising ? "Start" : "Stop"}",
                     );
                   },
-                  icon: const Icon(Icons.record_voice_over),
-                  tooltip: "Force Advertising Start",
                 ),
                 const SizedBox(width: 8),
-                _StatusIndicator(isRunning: isRunning, progress: progress),
+                _StatusIndicator(
+                  isRunning: isRunning,
+                  isScanning: isScanning,
+                  progress: progress,
+                ),
               ],
             ),
           ),
           if (isRunning)
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 32.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32.0,
+                vertical: 8.0,
+              ),
               child: Column(
                 children: [
-                  LinearProgressIndicator(value: progress),
+                  LinearProgressIndicator(
+                    value: progress,
+                    color: isScanning ? null : Colors.orange,
+                  ),
                   const SizedBox(height: 4),
                   Text(
-                    progress > 0 ? "Scanning..." : "Waiting for next cycle...",
+                    isScanning ? "Scanning..." : "Waiting for next cycle...",
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
@@ -104,11 +138,13 @@ class DiscoveryScreen extends ConsumerWidget {
                         final item = devices[index];
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primaryContainer,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
                             backgroundImage: item.profilePicture != null
                                 ? MemoryImage(
-                                    Uint8List.fromList(item.profilePicture!))
+                                    Uint8List.fromList(item.profilePicture!),
+                                  )
                                 : null,
                             child: item.profilePicture == null
                                 ? const Icon(Icons.person)
@@ -120,14 +156,15 @@ class DiscoveryScreen extends ConsumerWidget {
                               Text(
                                 item.name ?? "Unknown",
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               Row(
                                 children: [
                                   StreamBuilder<BluetoothConnectionState>(
-                                    stream:
-                                        BluetoothDevice.fromId(item.remoteId)
-                                            .connectionState,
+                                    stream: BluetoothDevice.fromId(
+                                      item.remoteId,
+                                    ).connectionState,
                                     builder: (context, snapshot) {
                                       final state = snapshot.data ??
                                           BluetoothConnectionState.disconnected;
@@ -145,9 +182,9 @@ class DiscoveryScreen extends ConsumerWidget {
                                     },
                                   ),
                                   StreamBuilder<BluetoothBondState>(
-                                    stream:
-                                        BluetoothDevice.fromId(item.remoteId)
-                                            .bondState,
+                                    stream: BluetoothDevice.fromId(
+                                      item.remoteId,
+                                    ).bondState,
                                     builder: (context, snapshot) {
                                       final state = snapshot.data ??
                                           BluetoothBondState.none;
@@ -168,18 +205,23 @@ class DiscoveryScreen extends ConsumerWidget {
                             ],
                           ),
                           subtitle: Text(
-                              "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}"),
+                            "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}",
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text("${item.rssi} dBm",
-                                      style: const TextStyle(fontSize: 10)),
+                                  Text(
+                                    "${item.rssi} dBm",
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
                                   const SizedBox(height: 4),
-                                  const Icon(Icons.signal_cellular_alt,
-                                      size: 16),
+                                  const Icon(
+                                    Icons.signal_cellular_alt,
+                                    size: 16,
+                                  ),
                                 ],
                               ),
                               IconButton(
@@ -226,7 +268,8 @@ class DiscoveryScreen extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(12),
                   image: DecorationImage(
                     image: MemoryImage(
-                        Uint8List.fromList(device.profilePicture!)),
+                      Uint8List.fromList(device.profilePicture!),
+                    ),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -237,7 +280,9 @@ class DiscoveryScreen extends ConsumerWidget {
             _ProfileInfo(label: "Stable ID", value: device.stableId.toString()),
             _ProfileInfo(label: "MAC Address", value: device.remoteId),
             _ProfileInfo(
-                label: "Last Seen", value: device.lastSeen.toLocal().toString()),
+              label: "Last Seen",
+              value: device.lastSeen.toLocal().toString(),
+            ),
             if (device.profileHash != null)
               _ProfileInfo(label: "Profile Hash", value: device.profileHash!),
           ],
@@ -253,7 +298,10 @@ class DiscoveryScreen extends ConsumerWidget {
   }
 
   void _sendMessageDialog(
-      BuildContext context, WidgetRef ref, FoundDevice device) {
+    BuildContext context,
+    WidgetRef ref,
+    FoundDevice device,
+  ) {
     final controller = TextEditingController();
     showDialog(
       context: context,
@@ -284,7 +332,10 @@ class DiscoveryScreen extends ConsumerWidget {
   }
 
   Future<void> _performSendMessage(
-      BuildContext context, FoundDevice device, String content) async {
+    BuildContext context,
+    FoundDevice device,
+    String content,
+  ) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     try {
       final bleDevice = BluetoothDevice.fromId(device.remoteId);
@@ -314,19 +365,24 @@ class DiscoveryScreen extends ConsumerWidget {
 
         if (messageChar != null) {
           final encryptedPayload = await MessageHandler.getEncryptedPayload(
-              device.stableId, content);
+            device.stableId,
+            content,
+          );
 
           if (encryptedPayload == null) {
             scaffoldMessenger.showSnackBar(
               const SnackBar(
-                  content: Text("Encryption failed: Public key missing.")),
+                content: Text("Encryption failed: Public key missing."),
+              ),
             );
             return;
           }
 
           final messageId = Random().nextInt(256);
           final chunks = ChunkedTransferManager.generateChunks(
-              encryptedPayload, messageId);
+            encryptedPayload,
+            messageId,
+          );
 
           int sent = 0;
           for (final chunk in chunks) {
@@ -385,7 +441,8 @@ class DiscoveryScreen extends ConsumerWidget {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text("Service reset and data cleared")),
+                    content: Text("Service reset and data cleared"),
+                  ),
                 );
               }
             },
@@ -413,9 +470,10 @@ class _ProfileInfo extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
           Text(value, style: const TextStyle(fontSize: 12)),
         ],
       ),
@@ -425,9 +483,14 @@ class _ProfileInfo extends StatelessWidget {
 
 class _StatusIndicator extends StatelessWidget {
   final bool isRunning;
+  final bool isScanning;
   final double progress;
 
-  const _StatusIndicator({required this.isRunning, required this.progress});
+  const _StatusIndicator({
+    required this.isRunning,
+    required this.isScanning,
+    required this.progress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -437,25 +500,20 @@ class _StatusIndicator extends StatelessWidget {
     if (!isRunning) {
       label = "INACTIVE";
       color = Colors.grey;
-    } else if (progress > 0) {
+    } else if (isScanning) {
       label = "SCANNING";
       color = Colors.green;
     } else {
       label = "WAITING";
       color = Colors.orange;
     }
-    
-    // Add advertising check if possible (requires a provider)
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color,
-          width: 1,
-        ),
+        border: Border.all(color: color, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -472,7 +530,7 @@ class _StatusIndicator extends StatelessWidget {
                         color: color.withOpacity(0.5),
                         blurRadius: 4,
                         spreadRadius: 1,
-                      )
+                      ),
                     ]
                   : null,
             ),
