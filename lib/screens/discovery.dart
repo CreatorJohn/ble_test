@@ -366,7 +366,7 @@ class DiscoveryScreen extends ConsumerWidget {
         if (messageChar != null) {
           final encryptedPayload = await MessageHandler.getEncryptedPayload(
             device.stableId,
-            content,
+            text: content,
           );
 
           if (encryptedPayload == null) {

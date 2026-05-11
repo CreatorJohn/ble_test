@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:isar_community/isar.dart';
 import 'package:logging/logging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
@@ -85,7 +86,8 @@ void onStart(ServiceInstance service) async {
     log.severe('BLEAdvertiser initialization failed: $e');
   }
 
-  String currentName = "BLE Test";
+  final prefs = await SharedPreferences.getInstance();
+  String currentName = prefs.getString('advertising_name_v2') ?? "BLE Test";
   double currentLat = 0.0;
   double currentLon = 0.0;
   bool isOnline = false;

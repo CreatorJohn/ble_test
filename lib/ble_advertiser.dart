@@ -26,6 +26,10 @@ class BLEAdvertiser {
   static const locationCharUuid = 'f1e2d3c4-b5a6-4321-8765-abcdef123456';
   static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
 
+  /// Maximum length for the display name in the scan response.
+  /// Calculated as: 31 (Total Scan Response) - 2 (AD Header) - 12 (Mesh Metadata) = 17
+  static const int maxNameLength = 17;
+
   static bool _isAdvertising = false;
   static bool _initialized = false;
   static bool _isHardwareUnsupported = false;

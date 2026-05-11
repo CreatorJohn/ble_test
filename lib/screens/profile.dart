@@ -1,3 +1,4 @@
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
 import 'package:ble_test/profile_manager.dart';
 import 'package:ble_test/providers/advertising_name.dart';
@@ -18,9 +19,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final TextEditingController _controller = TextEditingController();
   Uint8List? _profilePic;
-
-  // Max length calculated: 31 (Scan Response) - 2 (AD Header) - 12 (Mesh Metadata) = 17
-  static const int _maxNameLength = 17;
 
   @override
   void initState() {
@@ -112,7 +110,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 48),
             TextField(
-              maxLength: _maxNameLength,
+              maxLength: BLEAdvertiser.maxNameLength,
               controller: _controller,
               decoration: InputDecoration(
                 labelText: "Mesh Display Name",
