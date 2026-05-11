@@ -238,25 +238,7 @@ void onStart(ServiceInstance service) async {
       // Ensure adapter is ON
       var state = await FlutterBluePlus.adapterState.first;
       if (state != BluetoothAdapterState.on) {
-        log.info('Bluetooth is $state, attempting to turn ON...');
-        try {
-          // turnOn() is only supported on Android
-          if (Platform.isAndroid) {
-            await FlutterBluePlus.turnOn();
-            // Wait for state change
-            state = await FlutterBluePlus.adapterState
-                .where((s) => s == BluetoothAdapterState.on)
-                .first
-                .timeout(const Duration(seconds: 5));
-          }
-        } catch (e) {
-          log.warning('Failed to turn on Bluetooth: $e');
-        }
-      }
-
-      if (state != BluetoothAdapterState.on) {
-        log.warning('Cannot scan: Bluetooth is $state');
-        return;
+        log.info('Bluetooth state is $state');
       }
 
       final isScanning = FlutterBluePlus.isScanningNow;
