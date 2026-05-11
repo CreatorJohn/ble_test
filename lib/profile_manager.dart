@@ -8,7 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
+import 'package:flutter/material.dart';
 
 class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
@@ -23,28 +25,42 @@ class ProfileManager {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 512,
-      maxHeight: 512,
     );
 
     if (image == null) return;
 
-    final bytes = await image.readAsBytes();
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: image.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Profile Picture',
+          toolbarColor: const Color(0xFF6750A4),
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(
+          title: 'Crop Profile Picture',
+          aspectRatioLockEnabled: true,
+        ),
+      ],
+    );
+
+    if (croppedFile == null) return;
+
+    final bytes = await croppedFile.readAsBytes();
     final decodedImage = img.decodeImage(bytes);
 
     if (decodedImage == null) return;
 
-    // Resize to 256x256 max while maintaining aspect ratio
-    img.Image resized;
-    if (decodedImage.width > 256 || decodedImage.height > 256) {
-      resized = img.copyResize(
-        decodedImage,
-        width: decodedImage.width > decodedImage.height ? 256 : null,
-        height: decodedImage.height >= decodedImage.width ? 256 : null,
-      );
-    } else {
-      resized = decodedImage;
-    }
+    // Resize to 256x256
+    final img.Image resized = img.copyResize(
+      decodedImage,
+      width: 256,
+      height: 256,
+      interpolation: img.Interpolation.linear,
+    );
 
     final Uint8List pngBytes = Uint8List.fromList(img.encodePng(resized));
     await saveProfilePicture(pngBytes);

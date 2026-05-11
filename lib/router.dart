@@ -1,4 +1,4 @@
-import 'package:ble_test/screens/advertise.dart';
+import 'package:ble_test/screens/profile.dart';
 import 'package:ble_test/screens/discovery.dart';
 import 'package:ble_test/screens/home.dart';
 import 'package:ble_test/screens/messages.dart';
@@ -17,13 +17,13 @@ class HomeRoute extends GoRouteData with $HomeRoute {
   }
 }
 
-@TypedGoRoute<AdvertiseRoute>(path: "/advertise")
-class AdvertiseRoute extends GoRouteData with $AdvertiseRoute {
-  const AdvertiseRoute();
+@TypedGoRoute<ProfileRoute>(path: "/profile")
+class ProfileRoute extends GoRouteData with $ProfileRoute {
+  const ProfileRoute();
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    return AdvertiseScreen();
+    return const ProfileScreen();
   }
 }
 

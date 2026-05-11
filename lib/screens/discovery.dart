@@ -66,33 +66,33 @@ class DiscoveryScreen extends ConsumerWidget {
                         if (advertising) {
                           FlutterBackgroundService().invoke("stopAdvertising");
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Stopping advertisement")),
-                          );
-                        } else {
-                          final adName =
-                              ref.read(advertisingNameProvider).value ??
-                              "BLE Test";
-                          FlutterBackgroundService().invoke(
-                            "setAdvertisingName",
-                            {"name": adName},
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Attempting manual advertising start with: $adName",
-                              ),
+                          const SnackBar(content: Text("Stopping broadcast")),
+                        );
+                      } else {
+                        final adName =
+                            ref.read(advertisingNameProvider).value ??
+                            "BLE Test";
+                        FlutterBackgroundService().invoke(
+                          "setAdvertisingName",
+                          {"name": adName},
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Attempting manual broadcast start with: $adName",
                             ),
-                          );
-                        }
-                      },
-                      icon: Icon(
-                        advertising
-                            ? Icons.record_voice_over
-                            : Icons.play_disabled,
-                      ),
-                      tooltip:
-                          "Force Advertising ${advertising ? "Start" : "Stop"}",
-                    );
+                          ),
+                        );
+                      }
+                    },
+                    icon: Icon(
+                      advertising
+                          ? Icons.record_voice_over
+                          : Icons.play_disabled,
+                    ),
+                    tooltip:
+                        "Force Broadcast ${advertising ? "Start" : "Stop"}",
+                  );
                   },
                 ),
                 const SizedBox(width: 8),

@@ -24,8 +24,8 @@ class HomeScreen extends ConsumerWidget {
                 borderRadius: BorderRadiusGeometry.all(Radius.circular(8.0)),
               ),
             ),
-            onPressed: () => context.push(AdvertiseRoute().location),
-            child: const Text("Advertise"),
+            onPressed: () => context.push(const ProfileRoute().location),
+            child: const Text("Profile"),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(

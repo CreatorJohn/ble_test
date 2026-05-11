@@ -8,7 +8,7 @@ part of 'router.dart';
 
 List<RouteBase> get $appRoutes => [
   $homeRoute,
-  $advertiseRoute,
+  $profileRoute,
   $discoveryRoute,
   $messagesRoute,
 ];
@@ -36,15 +36,14 @@ mixin $HomeRoute on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $advertiseRoute =>
-    GoRouteData.$route(path: '/advertise', factory: $AdvertiseRoute._fromState);
+RouteBase get $profileRoute =>
+    GoRouteData.$route(path: '/profile', factory: $ProfileRoute._fromState);
 
-mixin $AdvertiseRoute on GoRouteData {
-  static AdvertiseRoute _fromState(GoRouterState state) =>
-      const AdvertiseRoute();
+mixin $ProfileRoute on GoRouteData {
+  static ProfileRoute _fromState(GoRouterState state) => const ProfileRoute();
 
   @override
-  String get location => GoRouteData.$location('/advertise');
+  String get location => GoRouteData.$location('/profile');
 
   @override
   void go(BuildContext context) => context.go(location);
