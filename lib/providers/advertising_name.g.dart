@@ -33,7 +33,7 @@ final class AdvertisingNameProvider
   AdvertisingName create() => AdvertisingName();
 }
 
-String _$advertisingNameHash() => r'a61896801e89a3cb06ed907048fe2d368940d32e';
+String _$advertisingNameHash() => r'cb557999836f7505f5213c5bea334a44c971e01a';
 
 abstract class _$AdvertisingName extends $AsyncNotifier<String> {
   FutureOr<String> build();

@@ -25,6 +25,8 @@ class DiscoveryScreen extends ConsumerWidget {
     final isRunning = ref.watch(isServiceRunningProvider).value ?? false;
     final isScanning = ref.watch(isScanningProvider).value ?? false;
     final progress = ref.watch(scanProgressProvider).value ?? 0.0;
+    final scanStatus = ref.watch(scanStatusProvider).value ?? {};
+    final remainingSeconds = scanStatus['remainingSeconds'] as int?;
 
     return ScaffoldWrapper(
       screen: DiscoveryRoute().location,
@@ -66,33 +68,33 @@ class DiscoveryScreen extends ConsumerWidget {
                         if (advertising) {
                           FlutterBackgroundService().invoke("stopAdvertising");
                           ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Stopping broadcast")),
-                        );
-                      } else {
-                        final adName =
-                            ref.read(advertisingNameProvider).value ??
-                            "BLE Test";
-                        FlutterBackgroundService().invoke(
-                          "setAdvertisingName",
-                          {"name": adName},
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Attempting manual broadcast start with: $adName",
+                            const SnackBar(content: Text("Stopping broadcast")),
+                          );
+                        } else {
+                          final adName =
+                              ref.read(advertisingNameProvider).value ??
+                              "BLE Test";
+                          FlutterBackgroundService().invoke(
+                            "setAdvertisingName",
+                            {"name": adName},
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Attempting manual broadcast start with: $adName",
+                              ),
                             ),
-                          ),
-                        );
-                      }
-                    },
-                    icon: Icon(
-                      advertising
-                          ? Icons.record_voice_over
-                          : Icons.play_disabled,
-                    ),
-                    tooltip:
-                        "Force Broadcast ${advertising ? "Start" : "Stop"}",
-                  );
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        advertising
+                            ? Icons.record_voice_over
+                            : Icons.play_disabled,
+                      ),
+                      tooltip:
+                          "Force Broadcast ${advertising ? "Start" : "Stop"}",
+                    );
                   },
                 ),
                 const SizedBox(width: 8),
@@ -118,13 +120,14 @@ class DiscoveryScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isScanning ? "Scanning..." : "Waiting for next cycle...",
+                    isScanning
+                        ? "Scanning..."
+                        : "Waiting for next cycle...${remainingSeconds != null ? ' ($remainingSeconds s)' : ''}",
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
               ),
-            ),
-          const Divider(),
+            ),          const Divider(),
           Expanded(
             child: ref.watch(discoveredDevicesProvider).when(
                   data: (devices) {

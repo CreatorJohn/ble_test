@@ -25,10 +25,15 @@ Stream<bool> isServiceRunning(Ref ref) {
 }
 
 @riverpod
-Stream<double> scanProgress(Ref ref) {
+Stream<Map<String, dynamic>> scanStatus(Ref ref) {
   final service = FlutterBackgroundService();
-  return service.on('updateProgress').map((event) {
-    final value = event?['value'];
+  return service.on('updateProgress').map((event) => event ?? {});
+}
+
+@riverpod
+Stream<double> scanProgress(Ref ref) {
+  return ref.watch(scanStatusProvider).map((event) {
+    final value = event['value'];
     if (value is double) return value;
     if (value is int) return value.toDouble();
     return 0.0;

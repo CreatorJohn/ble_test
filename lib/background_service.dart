@@ -284,10 +284,13 @@ void onStart(ServiceInstance service) async {
       // We are in wait period
       final elapsedSinceScanStart = now.difference(lastScanStartTime!);
       final totalCycle = scanDuration + waitDuration;
-      // Countdown progress from 1.0 down to 0.0 during the wait period
-      final remainingWait = totalCycle.inMilliseconds - elapsedSinceScanStart.inMilliseconds;
-      final progress = remainingWait / waitDuration.inMilliseconds;
-      service.invoke('updateProgress', {'value': progress.clamp(0.0, 1.0)});
+      final remainingWaitMs = totalCycle.inMilliseconds - elapsedSinceScanStart.inMilliseconds;
+      final remainingSeconds = (remainingWaitMs / 1000).ceil();
+      final progress = remainingWaitMs / waitDuration.inMilliseconds;
+      service.invoke('updateProgress', {
+        'value': progress.clamp(0.0, 1.0),
+        'remainingSeconds': remainingSeconds.clamp(0, waitDuration.inSeconds),
+      });
     } else {
       service.invoke('updateProgress', {'value': 0.0});
     }

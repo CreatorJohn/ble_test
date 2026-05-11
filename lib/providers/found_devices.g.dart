@@ -116,6 +116,47 @@ final class IsServiceRunningProvider
 
 String _$isServiceRunningHash() => r'2f3234e477cfcc8713abf0179f099f0182dead13';
 
+@ProviderFor(scanStatus)
+final scanStatusProvider = ScanStatusProvider._();
+
+final class ScanStatusProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<Map<String, dynamic>>,
+          Map<String, dynamic>,
+          Stream<Map<String, dynamic>>
+        >
+    with
+        $FutureModifier<Map<String, dynamic>>,
+        $StreamProvider<Map<String, dynamic>> {
+  ScanStatusProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'scanStatusProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$scanStatusHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<Map<String, dynamic>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<Map<String, dynamic>> create(Ref ref) {
+    return scanStatus(ref);
+  }
+}
+
+String _$scanStatusHash() => r'64dd908ae4d2d0ce7c57cced4a0ce582f763f238';
+
 @ProviderFor(scanProgress)
 final scanProgressProvider = ScanProgressProvider._();
 
@@ -147,7 +188,7 @@ final class ScanProgressProvider
   }
 }
 
-String _$scanProgressHash() => r'73ccb12b51761b0d5237586e4739003c31c65674';
+String _$scanProgressHash() => r'709a7700a96e0ef30f2df9fe6f02fcbf320eeba0';
 
 @ProviderFor(discoveredDevices)
 final discoveredDevicesProvider = DiscoveredDevicesProvider._();
