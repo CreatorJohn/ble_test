@@ -14,6 +14,9 @@ class MessageHandler {
   static final _cipher = Chacha20.poly1305Aead();
   static final _exchangeAlgorithm = X25519();
 
+  static const int typeText = 0x01;
+  static const int typeImage = 0x02;
+
   static void initialize() {
     ChunkedTransferManager.onPayloadComplete.listen((event) async {
       final senderStableId = event['senderStableId'] as int;
@@ -21,20 +24,33 @@ class MessageHandler {
 
       try {
         final decryptedData = await _decryptMessage(senderStableId, data);
-        if (decryptedData == null) return;
+        if (decryptedData == null || decryptedData.isEmpty) return;
 
-        final content = utf8.decode(decryptedData);
+        // Header: Byte 0 = Type
+        final type = decryptedData[0];
+        final payload = decryptedData.sublist(1);
+
         final myStableId = await ProfileManager.getStableDeviceId();
-
         final message = Message()
           ..senderStableId = senderStableId
           ..receiverStableId = myStableId
-          ..content = content
           ..timestamp = DateTime.now()
           ..isReceived = true;
 
+        if (type == typeText) {
+          message.content = utf8.decode(payload);
+          message.isImage = false;
+        } else if (type == typeImage) {
+          message.content = "[Image]";
+          message.isImage = true;
+          message.data = payload;
+        } else {
+          _log.warning('Unknown message type received: $type');
+          return;
+        }
+
         await IsarService().putMessage(message);
-        _log.info('Decrypted and saved message from $senderStableId: $content');
+        _log.info('Decrypted and saved message from $senderStableId (Type: $type)');
       } catch (e) {
         _log.severe('Failed to decrypt or decode message: $e');
       }
@@ -54,40 +70,26 @@ class MessageHandler {
   static Future<void> handleOutgoingMessage({
     required int receiverStableId,
     required String content,
+    bool isImage = false,
+    Uint8List? imageData,
   }) async {
     try {
       final isar = IsarService();
-      final device = await isar.db.foundDevices
-          .where()
-          .stableIdEqualTo(receiverStableId)
-          .findFirst();
-
-      if (device == null || device.publicKey == null) {
-        _log.warning('Cannot encrypt: Public key missing for $receiverStableId');
-        return;
-      }
-
-      final cleartext = utf8.encode(content);
-      final encryptedData = await _encryptMessage(
-        Uint8List.fromList(cleartext),
-        Uint8List.fromList(device.publicKey!),
-      );
-
       final myStableId = await ProfileManager.getStableDeviceId();
+
       final message = Message()
         ..senderStableId = myStableId
         ..receiverStableId = receiverStableId
-        ..content = content // We save cleartext locally for our own display
+        ..content = content
         ..timestamp = DateTime.now()
-        ..isReceived = false;
+        ..isReceived = false
+        ..isImage = isImage
+        ..data = imageData;
 
       await isar.putMessage(message);
-      
-      // Note: The encryptedData should be sent via GATT chunks.
-      // This is handled in the UI call to _performSendMessage.
-      _log.info('Encrypted and queued message to $receiverStableId');
+      _log.info('Saved outgoing message to $receiverStableId');
     } catch (e) {
-      _log.severe('Encryption failed: $e');
+      _log.severe('Failed to save outgoing message: $e');
     }
   }
 
@@ -146,8 +148,10 @@ class MessageHandler {
     return Uint8List.fromList(cleartext);
   }
 
-  /// Helper to get encrypted bytes for the UI to send
-  static Future<Uint8List?> getEncryptedPayload(int receiverStableId, String content) async {
+  static Future<Uint8List?> getEncryptedPayload(int receiverStableId, {
+    String? text,
+    Uint8List? image,
+  }) async {
     final isar = IsarService();
     final device = await isar.db.foundDevices
         .where()
@@ -156,8 +160,21 @@ class MessageHandler {
 
     if (device == null || device.publicKey == null) return null;
 
+    // Build cleartext with header
+    final Uint8List cleartext;
+    if (image != null) {
+      cleartext = Uint8List(1 + image.length);
+      cleartext[0] = typeImage;
+      cleartext.setRange(1, cleartext.length, image);
+    } else {
+      final textBytes = utf8.encode(text ?? "");
+      cleartext = Uint8List(1 + textBytes.length);
+      cleartext[0] = typeText;
+      cleartext.setRange(1, cleartext.length, textBytes);
+    }
+
     return await _encryptMessage(
-      Uint8List.fromList(utf8.encode(content)),
+      cleartext,
       Uint8List.fromList(device.publicKey!),
     );
   }

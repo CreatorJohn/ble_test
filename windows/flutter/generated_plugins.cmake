@@ -5,7 +5,9 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   battery_plus
   ble_peripheral
+  file_selector_windows
   flutter_blue_plus_winrt
+  flutter_secure_storage_windows
   geolocator_windows
   isar_community_flutter_libs
   permission_handler_windows

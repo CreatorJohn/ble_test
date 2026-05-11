@@ -18,23 +18,25 @@ const MessageSchema = CollectionSchema(
   id: 2463283977299753079,
   properties: {
     r'content': PropertySchema(id: 0, name: r'content', type: IsarType.string),
+    r'data': PropertySchema(id: 1, name: r'data', type: IsarType.longList),
+    r'isImage': PropertySchema(id: 2, name: r'isImage', type: IsarType.bool),
     r'isReceived': PropertySchema(
-      id: 1,
+      id: 3,
       name: r'isReceived',
       type: IsarType.bool,
     ),
     r'receiverStableId': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'receiverStableId',
       type: IsarType.long,
     ),
     r'senderStableId': PropertySchema(
-      id: 3,
+      id: 5,
       name: r'senderStableId',
       type: IsarType.long,
     ),
     r'timestamp': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
@@ -62,6 +64,12 @@ int _messageEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.content.length * 3;
+  {
+    final value = object.data;
+    if (value != null) {
+      bytesCount += 3 + value.length * 8;
+    }
+  }
   return bytesCount;
 }
 
@@ -72,10 +80,12 @@ void _messageSerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.content);
-  writer.writeBool(offsets[1], object.isReceived);
-  writer.writeLong(offsets[2], object.receiverStableId);
-  writer.writeLong(offsets[3], object.senderStableId);
-  writer.writeDateTime(offsets[4], object.timestamp);
+  writer.writeLongList(offsets[1], object.data);
+  writer.writeBool(offsets[2], object.isImage);
+  writer.writeBool(offsets[3], object.isReceived);
+  writer.writeLong(offsets[4], object.receiverStableId);
+  writer.writeLong(offsets[5], object.senderStableId);
+  writer.writeDateTime(offsets[6], object.timestamp);
 }
 
 Message _messageDeserialize(
@@ -86,11 +96,13 @@ Message _messageDeserialize(
 ) {
   final object = Message();
   object.content = reader.readString(offsets[0]);
+  object.data = reader.readLongList(offsets[1]);
   object.id = id;
-  object.isReceived = reader.readBool(offsets[1]);
-  object.receiverStableId = reader.readLong(offsets[2]);
-  object.senderStableId = reader.readLong(offsets[3]);
-  object.timestamp = reader.readDateTime(offsets[4]);
+  object.isImage = reader.readBool(offsets[2]);
+  object.isReceived = reader.readBool(offsets[3]);
+  object.receiverStableId = reader.readLong(offsets[4]);
+  object.senderStableId = reader.readLong(offsets[5]);
+  object.timestamp = reader.readDateTime(offsets[6]);
   return object;
 }
 
@@ -104,12 +116,16 @@ P _messageDeserializeProp<P>(
     case 0:
       return (reader.readString(offset)) as P;
     case 1:
-      return (reader.readBool(offset)) as P;
+      return (reader.readLongList(offset)) as P;
     case 2:
-      return (reader.readLong(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 3:
-      return (reader.readLong(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 4:
+      return (reader.readLong(offset)) as P;
+    case 5:
+      return (reader.readLong(offset)) as P;
+    case 6:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -354,6 +370,136 @@ extension MessageQueryFilter
     });
   }
 
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'data'),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'data'),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataElementEqualTo(
+    int value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'data', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataElementGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'data',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataElementLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'data',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataElementBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'data',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataLengthEqualTo(
+    int length,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'data', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'data', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'data', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataLengthLessThan(
+    int length, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'data', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataLengthGreaterThan(
+    int length, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'data', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> dataLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'data',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
+      );
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterFilterCondition> idEqualTo(Id value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -407,6 +553,16 @@ extension MessageQueryFilter
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> isImageEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isImage', value: value),
       );
     });
   }
@@ -612,6 +768,18 @@ extension MessageQuerySortBy on QueryBuilder<Message, Message, QSortBy> {
     });
   }
 
+  QueryBuilder<Message, Message, QAfterSortBy> sortByIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isImage', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByIsImageDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isImage', Sort.desc);
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterSortBy> sortByIsReceived() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isReceived', Sort.asc);
@@ -687,6 +855,18 @@ extension MessageQuerySortThenBy
     });
   }
 
+  QueryBuilder<Message, Message, QAfterSortBy> thenByIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isImage', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> thenByIsImageDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isImage', Sort.desc);
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterSortBy> thenByIsReceived() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isReceived', Sort.asc);
@@ -746,6 +926,18 @@ extension MessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Message, Message, QDistinct> distinctByData() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'data');
+    });
+  }
+
+  QueryBuilder<Message, Message, QDistinct> distinctByIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isImage');
+    });
+  }
+
   QueryBuilder<Message, Message, QDistinct> distinctByIsReceived() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isReceived');
@@ -782,6 +974,18 @@ extension MessageQueryProperty
   QueryBuilder<Message, String, QQueryOperations> contentProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'content');
+    });
+  }
+
+  QueryBuilder<Message, List<int>?, QQueryOperations> dataProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'data');
+    });
+  }
+
+  QueryBuilder<Message, bool, QQueryOperations> isImageProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isImage');
     });
   }
 

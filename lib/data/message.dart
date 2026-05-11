@@ -12,4 +12,6 @@ class Message {
   late DateTime timestamp;
 
   late bool isReceived;
+  late bool isImage;
+  List<int>? data;
 }
