@@ -32,8 +32,9 @@ Stream<Map<String, dynamic>> scanStatus(Ref ref) {
 
 @riverpod
 Stream<double> scanProgress(Ref ref) {
-  return ref.watch(scanStatusProvider).map((event) {
-    final value = event['value'];
+  final service = FlutterBackgroundService();
+  return service.on('updateProgress').map((event) {
+    final value = event?['value'];
     if (value is double) return value;
     if (value is int) return value.toDouble();
     return 0.0;

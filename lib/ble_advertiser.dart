@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
-import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';

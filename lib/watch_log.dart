@@ -32,7 +32,6 @@ class WatchLog {
           '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}';
 
       _addLog(message, record.level);
-      print(message);
     });
 
     // 2. Listen for logs from the background service

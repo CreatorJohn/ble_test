@@ -136,7 +136,6 @@ class ChunkedTransferManager {
       {int maxChunkSize = 200}) {
     final List<Uint8List> dataChunks = [];
     int offset = 0;
-    int chunkIndex = 0;
     
     // 1. Generate Data Chunks
     while (offset < payload.length) {

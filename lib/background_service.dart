@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -29,7 +30,8 @@ Future<void> initializeBackgroundService() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
 
   await service.configure(
@@ -266,7 +268,7 @@ void onStart(ServiceInstance service) async {
 
       log.info('Starting BLE scan (duration: ${scanDuration.inSeconds}s)...');
       lastScanStartTime = DateTime.now();
-      
+
       await FlutterBluePlus.startScan(
         timeout: scanDuration,
         withServices: [Guid(BLEAdvertiser.serviceUuid)],
@@ -277,8 +279,8 @@ void onStart(ServiceInstance service) async {
     } catch (e) {
       log.severe('startSafeScan failed: $e');
       lastScanStartTime = null;
-      
-      // If we got the specific NPE or PlatformException, 
+
+      // If we got the specific NPE or PlatformException,
       // it might be because the stack is "stuck".
       // A small delay before the next cycle might help.
     }
@@ -295,7 +297,8 @@ void onStart(ServiceInstance service) async {
       // We are in wait period
       final elapsedSinceScanStart = now.difference(lastScanStartTime!);
       final totalCycle = scanDuration + waitDuration;
-      final remainingWaitMs = totalCycle.inMilliseconds - elapsedSinceScanStart.inMilliseconds;
+      final remainingWaitMs =
+          totalCycle.inMilliseconds - elapsedSinceScanStart.inMilliseconds;
       final remainingSeconds = (remainingWaitMs / 1000).ceil();
       final progress = remainingWaitMs / waitDuration.inMilliseconds;
       service.invoke('updateProgress', {
@@ -371,14 +374,18 @@ Future<void> _fetchFullMetadata(
           BLEAdvertiser.serviceUuid.toLowerCase()) {
         for (final c in s.characteristics) {
           final charId = c.uuid.toString().toLowerCase();
-          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase())
+          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
             picChar = c;
-          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase())
+          }
+          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
             hashChar = c;
-          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase())
+          }
+          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase()) {
             locChar = c;
-          if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase())
+          }
+          if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
             keyChar = c;
+          }
         }
       }
     }
