@@ -228,48 +228,59 @@ void onStart(ServiceInstance service) async {
       log.info('Attempting startSafeScan...');
       service.invoke("updateAdvertisingName", {"name": currentName});
 
-      final isSupported = await FlutterBluePlus.isSupported;
-      log.info('Bluetooth supported: $isSupported');
-      if (!isSupported) return;
+      if (!await FlutterBluePlus.isSupported) {
+        log.warning('Bluetooth not supported on this device');
+        return;
+      }
 
-      final isScanning = FlutterBluePlus.isScanningNow;
-      log.info('Current scan state: isScanning=$isScanning');
-
-      if (!isScanning) {
-        log.info('Starting BLE scan (timeout: 20s)...');
-        lastScanStartTime = DateTime.now();
+      // Ensure adapter is ON
+      var state = await FlutterBluePlus.adapterState.first;
+      if (state != BluetoothAdapterState.on) {
+        log.info('Bluetooth is $state, attempting to turn ON...');
         try {
-          await FlutterBluePlus.startScan(
-            timeout: scanDuration,
-            withServices: [Guid(BLEAdvertiser.serviceUuid)],
-            androidScanMode: AndroidScanMode.lowPower,
-          );
-          log.info('BLE scan started successfully');
-        } catch (e) {
-          if (e.toString().contains("Bluetooth must be turned on")) {
-            log.warning(
-              'Chromebook Bluetooth state mismatch detected. Attempting to force turnOn() and retry...',
-            );
-            try {
-              await FlutterBluePlus.turnOn();
-              await Future.delayed(const Duration(seconds: 2));
-              await FlutterBluePlus.startScan(
-                timeout: scanDuration,
-                withServices: [Guid(BLEAdvertiser.serviceUuid)],
-                androidScanMode: AndroidScanMode.lowPower,
-              );
-              log.info('BLE scan started successfully after force turnOn()');
-            } catch (retryError) {
-              log.severe('Retry startScan failed: $retryError');
-            }
-          } else {
-            rethrow;
+          // turnOn() is only supported on Android
+          if (Platform.isAndroid) {
+            await FlutterBluePlus.turnOn();
+            // Wait for state change
+            state = await FlutterBluePlus.adapterState
+                .where((s) => s == BluetoothAdapterState.on)
+                .first
+                .timeout(const Duration(seconds: 5));
           }
+        } catch (e) {
+          log.warning('Failed to turn on Bluetooth: $e');
         }
       }
+
+      if (state != BluetoothAdapterState.on) {
+        log.warning('Cannot scan: Bluetooth is $state');
+        return;
+      }
+
+      final isScanning = FlutterBluePlus.isScanningNow;
+      if (isScanning) {
+        log.info('Scan already in progress, stopping first...');
+        await FlutterBluePlus.stopScan();
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      log.info('Starting BLE scan (duration: ${scanDuration.inSeconds}s)...');
+      lastScanStartTime = DateTime.now();
+      
+      await FlutterBluePlus.startScan(
+        timeout: scanDuration,
+        withServices: [Guid(BLEAdvertiser.serviceUuid)],
+        androidScanMode: AndroidScanMode.lowPower,
+        oneByOne: true, // More reliable for background/low-memory
+      );
+      log.info('BLE scan started successfully');
     } catch (e) {
       log.severe('startSafeScan failed: $e');
       lastScanStartTime = null;
+      
+      // If we got the specific NPE or PlatformException, 
+      // it might be because the stack is "stuck".
+      // A small delay before the next cycle might help.
     }
   }
 
