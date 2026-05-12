@@ -237,28 +237,15 @@ class BLEAdvertiser {
         isOnline: isOnline,
       );
 
-      final scanResponseMetadata = MeshPacketEncoder.encodeScanResponseData(
-        latitude: latitude,
-        longitude: longitude,
-        profileHash: fullHash,
-      );
-
-      final nameBytes = Uint8List.fromList(localName.codeUnits);
-      final combinedName =
-          Uint8List(scanResponseMetadata.length + nameBytes.length);
-      combinedName.setRange(
-          0, scanResponseMetadata.length, scanResponseMetadata);
-      combinedName.setRange(
-          scanResponseMetadata.length, combinedName.length, nameBytes);
-
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
-        localName: String.fromCharCodes(combinedName),
+        localName: localName,
         manufacturerData: ManufacturerData(
           manufacturerId: 0xFFFF,
           data: mainPayload,
         ),
+        addManufacturerDataInScanResponse: true,
       );
     } catch (e) {
       if (e.toString().contains("UnsupportedOperationException") || 

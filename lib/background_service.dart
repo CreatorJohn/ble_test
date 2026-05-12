@@ -152,32 +152,13 @@ void onStart(ServiceInstance service) async {
       // Byte 4 contains the version tag (top 6 bits)
       final discoveredVersionTag = (meshData[4] >> 2) & 0x3F;
 
-      Uint8List? scanResponseData;
-      String displayName = "Unknown device";
-
-      if (advData.advName.length >= 12) {
-        scanResponseData = Uint8List.fromList(
-          advData.advName.substring(0, 12).codeUnits,
-        );
-        displayName = advData.advName.substring(12);
-      } else if (advData.advName.isNotEmpty) {
-        displayName = advData.advName;
-      }
-
       final device = FoundDevice()
         ..stableId = stableId
         ..remoteId = result.device.remoteId.toString()
-        ..name = displayName
+        ..name = advData.advName
         ..rssi = result.rssi
         ..lastSeen = DateTime.now()
         ..versionTag = discoveredVersionTag;
-
-      if (scanResponseData != null) {
-        final fullHashBytes = scanResponseData.sublist(6, 12);
-        device.profileHash = fullHashBytes
-            .map((b) => b.toRadixString(16).padLeft(2, '0'))
-            .join();
-      }
 
       try {
         final existing = await isarService.db.foundDevices

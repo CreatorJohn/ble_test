@@ -22,8 +22,7 @@ class MeshPacketEncoder {
   }
 
   /// Encodes the primary advertisement manufacturer data (exactly 5 bytes).
-  /// Total Primary Packet: 3 (Flags) + 18 (UUID) + 4 (Overhead) + 5 (Payload) = 30 bytes.
-  /// This 1-byte safety buffer ensures discovery reliability on Chromebooks.
+  /// This minimal payload fits alongside the 16-byte Service UUID in a 31-byte packet.
   static Uint8List encodeMainPacket({
     required int stableId,
     required Uint8List profileHash,
@@ -45,31 +44,6 @@ class MeshPacketEncoder {
     if (isOnline) flags |= 0x01;
 
     data[4] = (versionTag << 2) | flags;
-
-    return data;
-  }
-
-  /// Encodes the scan response metadata (12 bytes).
-  static Uint8List encodeScanResponseData({
-    required double latitude,
-    required double longitude,
-    required Uint8List profileHash,
-  }) {
-    final lat24 = encodeCoordinate(latitude, true);
-    final lon24 = encodeCoordinate(longitude, false);
-
-    final data = Uint8List(12);
-    // Lat (3) + Lon (3)
-    data[0] = (lat24 >> 16) & 0xFF;
-    data[1] = (lat24 >> 8) & 0xFF;
-    data[2] = lat24 & 0xFF;
-
-    data[3] = (lon24 >> 16) & 0xFF;
-    data[4] = (lon24 >> 8) & 0xFF;
-    data[5] = lon24 & 0xFF;
-
-    // Full Hash (6 bytes)
-    data.setRange(6, 12, profileHash);
 
     return data;
   }
