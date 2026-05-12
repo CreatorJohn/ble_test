@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -256,7 +257,8 @@ Future<void> _startServiceLogic(
           device.publicKey = existing.publicKey;
           device.lastPictureSync = existing.lastPictureSync;
 
-          bool versionChanged = versionTag != null && existing.versionTag != versionTag;
+          bool versionChanged =
+              versionTag != null && existing.versionTag != versionTag;
           bool needsForcedSync =
               existing.lastPictureSync == null ||
               DateTime.now().difference(existing.lastPictureSync!).inHours >=
@@ -443,9 +445,8 @@ Future<void> _fetchFullMetadata(
     if (hashChar != null) {
       log.info('Reading full hash from $stableId...');
       final hashBytes = await hashChar.read();
-      final hashHex = hashBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      final hashHex =
+          hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
       final existing = await isar.db.foundDevices
           .where()
@@ -479,10 +480,6 @@ Future<void> _fetchFullMetadata(
   } catch (e) {
     log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
-    await device.disconnect();
-  }
-}
- {
     await device.disconnect();
   }
 }
