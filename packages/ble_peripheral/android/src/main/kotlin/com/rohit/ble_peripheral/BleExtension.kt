@@ -39,7 +39,7 @@ fun BleService.toGattService(): BluetoothGattService {
         if (primary) BluetoothGattService.SERVICE_TYPE_PRIMARY else BluetoothGattService.SERVICE_TYPE_SECONDARY
     )
     characteristics.forEach {
-        it.toGattCharacteristic().let { characteristic ->
+        it?.toGattCharacteristic()?.let { characteristic ->
             service.addCharacteristic(characteristic)
         }
     }
@@ -56,7 +56,7 @@ fun BleCharacteristic.toGattCharacteristic(): BluetoothGattCharacteristic {
         char.value = it
     }
     descriptors?.forEach {
-        it.toGattDescriptor().let { descriptor ->
+        it?.toGattDescriptor()?.let { descriptor ->
             char.addDescriptor(descriptor)
         }
     }
@@ -80,7 +80,7 @@ fun addCCDescriptorIfRequired(
 
     var cccdDescriptorAlreadyAdded = false
     for (descriptor in bleCharacteristic.descriptors ?: Collections.emptyList()) {
-        if (descriptor.uuid.lowercase() == descriptorCCUUID.lowercase()) {
+        if (descriptor?.uuid?.lowercase() == descriptorCCUUID.lowercase()) {
             cccdDescriptorAlreadyAdded = true
             break
         }
@@ -137,12 +137,12 @@ fun String.findService(): BluetoothGattService? {
     return null
 }
 
-fun List<Long>.toPropertiesList(): Int {
-    return this.map { it.toInt() }.fold(0) { acc, i -> acc or i.toProperties() }.toInt()
+fun List<Long?>.toPropertiesList(): Int {
+    return this.filterNotNull().map { it.toInt() }.fold(0) { acc, i -> acc or i.toProperties() }.toInt()
 }
 
-fun List<Long>.toPermissionsList(): Int {
-    return this.map { it.toInt() }.fold(0) { acc, i -> acc or i.toPermission() }.toInt()
+fun List<Long?>.toPermissionsList(): Int {
+    return this.filterNotNull().map { it.toInt() }.fold(0) { acc, i -> acc or i.toPermission() }.toInt()
 }
 
 fun Int.toProperties(): Int {
