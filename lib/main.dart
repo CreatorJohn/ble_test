@@ -1,3 +1,4 @@
+import 'package:ble_test/background_service.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/router.dart';
