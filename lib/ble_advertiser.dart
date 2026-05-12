@@ -93,7 +93,8 @@ class BLEAdvertiser {
       }
     } catch (e) {
       _log.warning(
-          'BlePeripheral.initialize() failed (Advertising may be unsupported): $e');
+        'BlePeripheral.initialize() failed (Advertising may be unsupported): $e',
+      );
     }
 
     if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
@@ -114,8 +115,12 @@ class BLEAdvertiser {
       }
     });
 
-    BlePeripheral.setWriteRequestCallback(
-        (deviceId, characteristicUuid, offset, value) {
+    BlePeripheral.setWriteRequestCallback((
+      deviceId,
+      characteristicUuid,
+      offset,
+      value,
+    ) {
       _log.info('Write request from $deviceId for $characteristicUuid');
       if (characteristicUuid.toLowerCase() == messageCharUuid.toLowerCase()) {
         if (value != null) {
@@ -137,8 +142,12 @@ class BLEAdvertiser {
       return WriteRequestResult();
     });
 
-    BlePeripheral.setReadRequestCallback(
-        (deviceId, characteristicUuid, offset, value) {
+    BlePeripheral.setReadRequestCallback((
+      deviceId,
+      characteristicUuid,
+      offset,
+      value,
+    ) {
       _log.info('Read request from $deviceId for $characteristicUuid');
       return null;
     });
@@ -237,6 +246,12 @@ class BLEAdvertiser {
         isOnline: isOnline,
       );
 
+      final scanResponsePayload = MeshPacketEncoder.encodeScanResponseManufacturerData(
+        latitude: latitude,
+        longitude: longitude,
+        profileHash: fullHash,
+      );
+
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
         services: [serviceUuid],
@@ -245,12 +260,18 @@ class BLEAdvertiser {
           manufacturerId: 0xFFFF,
           data: mainPayload,
         ),
-        addManufacturerDataInScanResponse: true,
+        addManufacturerDataInScanResponse: false,
+        scanResponseManufacturerData: ManufacturerData(
+          manufacturerId: 0xFFFF,
+          data: scanResponsePayload,
+        ),
       );
     } catch (e) {
-      if (e.toString().contains("UnsupportedOperationException") || 
+      if (e.toString().contains("UnsupportedOperationException") ||
           e.toString().contains("Advertising not supported")) {
-        _log.warning('Detected unsupported advertising hardware. Silencing future attempts.');
+        _log.warning(
+          'Detected unsupported advertising hardware. Silencing future attempts.',
+        );
         _isHardwareUnsupported = true;
       } else {
         _log.severe('Failed to start advertising: $e');

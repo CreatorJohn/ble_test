@@ -48,6 +48,31 @@ class MeshPacketEncoder {
     return data;
   }
 
+  /// Encodes the scan response metadata (12 bytes) as raw manufacturer data.
+  static Uint8List encodeScanResponseManufacturerData({
+    required double latitude,
+    required double longitude,
+    required Uint8List profileHash,
+  }) {
+    final lat24 = encodeCoordinate(latitude, true);
+    final lon24 = encodeCoordinate(longitude, false);
+
+    final data = Uint8List(12);
+    // Lat (3) + Lon (3)
+    data[0] = (lat24 >> 16) & 0xFF;
+    data[1] = (lat24 >> 8) & 0xFF;
+    data[2] = lat24 & 0xFF;
+
+    data[3] = (lon24 >> 16) & 0xFF;
+    data[4] = (lon24 >> 8) & 0xFF;
+    data[5] = lon24 & 0xFF;
+
+    // Full Hash (6 bytes)
+    data.setRange(6, 12, profileHash);
+
+    return data;
+  }
+
   /// Encodes 24-bit Lat/Long into a 6-byte buffer for GATT.
   static Uint8List encodeLocation(double lat, double lon) {
     final lat24 = encodeCoordinate(lat, true);

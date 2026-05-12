@@ -160,6 +160,37 @@ void onStart(ServiceInstance service) async {
         ..lastSeen = DateTime.now()
         ..versionTag = discoveredVersionTag;
 
+      // If the scanner merged the Scan Response or if we are seeing the 12-byte metadata block
+      if (meshData.length >= 12) {
+        // This is likely our Scan Response Manufacturer Data
+        final lat24 = (meshData[0] << 16) | (meshData[1] << 8) | meshData[2];
+        final lon24 = (meshData[3] << 16) | (meshData[4] << 8) | meshData[5];
+        final fullHashBytes = meshData.sublist(6, 12);
+
+        // However, wait: Our encodeScanResponseManufacturerData is exactly 12 bytes.
+        // But ble_peripheral on Android might send them separately.
+        // If meshData.length is exactly 12, it's the Scan Response payload.
+        // If it's 17+, it might be merged. Let's handle both.
+        
+        int offset = 0;
+        if (meshData.length >= 17 && stableId == buffer.getUint32(0, Endian.big)) {
+           // Merged: [ID(4)][Flag(1)][Lat(3)][Lon(3)][Hash(6)] = 17 bytes
+           offset = 5;
+        }
+
+        if (meshData.length == 12 || offset == 5) {
+          final latVal = (meshData[offset + 0] << 16) | (meshData[offset + 1] << 8) | meshData[offset + 2];
+          final lonVal = (meshData[offset + 3] << 16) | (meshData[offset + 4] << 8) | meshData[offset + 5];
+          final hashBytes = meshData.sublist(offset + 6, offset + 12);
+
+          device.profileHash = hashBytes
+              .map((b) => b.toRadixString(16).padLeft(2, '0'))
+              .join();
+          // Note: Logic to update lat/long in DB would go here if we had fields for them in FoundDevice
+          // Currently FoundDevice only stores profileHash and versionTag.
+        }
+      }
+
       try {
         final existing = await isarService.db.foundDevices
             .where()
