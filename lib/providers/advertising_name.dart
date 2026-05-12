@@ -7,12 +7,16 @@ part 'advertising_name.g.dart';
 
 @riverpod
 class IsAdvertising extends _$IsAdvertising {
-  final BLEAdvertiser _advertiser = BLEAdvertiser();
+  final FlutterBackgroundService _service = FlutterBackgroundService();
 
   @override
   bool build() {
-    _advertiser.advertisingStatusStream.listen((advertising) {
-      state = advertising;
+    _service.on("advertisingChange").listen((event) {
+      final active = event?["active"];
+
+      if (active is bool) {
+        state = active;
+      }
     });
 
     return false;

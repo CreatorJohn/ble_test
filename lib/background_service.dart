@@ -127,13 +127,6 @@ Future<void> _startServiceLogic(
     }
   }
 
-  /*
-  if (advertisingOn) {
-    log.info('Auto-starting advertisement on service start...');
-    updateAd();
-  }
-  */
-
   log.info('Setting up location stream...');
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
@@ -146,7 +139,7 @@ Future<void> _startServiceLogic(
       currentLat = position.latitude;
       currentLon = position.longitude;
 
-      // if (advertisingOn) updateAd();
+      if (advertisingOn) updateAd();
     },
     onError: (e) {
       log.warning('Location stream error: $e');
@@ -380,6 +373,7 @@ Future<void> _startServiceLogic(
     advertisingOn = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('advertising_on', true);
+    service.invoke("advertisingChange", {"active": true});
 
     log.info("Preparing to advertise with $name...");
     if (name is String) {
@@ -394,7 +388,7 @@ Future<void> _startServiceLogic(
     if (status is bool) {
       log.info('Setting online status to: $status');
       isOnline = status;
-      // if (advertisingOn) updateAd();
+      if (advertisingOn) updateAd();
     }
   });
 
@@ -402,6 +396,7 @@ Future<void> _startServiceLogic(
     advertisingOn = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('advertising_on', false);
+    service.invoke("advertisingChange", {"active": false});
     await advertiser.stopAdvertising();
   });
 }
