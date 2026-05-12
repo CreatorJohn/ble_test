@@ -81,11 +81,14 @@ void onStart(ServiceInstance service) async {
   log.info('Service isolate started');
 
   // Catch unhandled errors in the background isolate
-  runZonedGuarded(() async {
-    await _startServiceLogic(service, advertiser);
-  }, (error, stack) {
-    log.severe('Top-level background error: $error', error, stack);
-  });
+  runZonedGuarded(
+    () async {
+      await _startServiceLogic(service, advertiser);
+    },
+    (error, stack) {
+      log.severe('Top-level background error: $error', error, stack);
+    },
+  );
 }
 
 Future<void> _startServiceLogic(
@@ -141,7 +144,7 @@ Future<void> _startServiceLogic(
       currentLat = position.latitude;
       currentLon = position.longitude;
 
-      if (advertisingOn) updateAd();
+      // if (advertisingOn) updateAd();
     },
     onError: (e) {
       log.warning('Location stream error: $e');
@@ -445,8 +448,9 @@ Future<void> _fetchFullMetadata(
     if (hashChar != null) {
       log.info('Reading full hash from $stableId...');
       final hashBytes = await hashChar.read();
-      final hashHex =
-          hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      final hashHex = hashBytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
 
       final existing = await isar.db.foundDevices
           .where()
