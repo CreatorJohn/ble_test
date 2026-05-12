@@ -112,8 +112,21 @@ Future<void> _startServiceLogic(
   double currentLon = 0.0;
   bool isOnline = false;
 
+  bool isAdUpdating = false;
+  bool needsTrailingUpdate = false;
+
   Future<void> updateAd() async {
     if (!advertisingOn) return;
+
+    if (isAdUpdating) {
+      // Already in cooldown, mark for trailing update
+      needsTrailingUpdate = true;
+      return;
+    }
+
+    isAdUpdating = true;
+    needsTrailingUpdate = false;
+
     try {
       log.info('Updating advertisement: name=$currentName, online=$isOnline');
       await advertiser.startAdvertising(
@@ -125,6 +138,15 @@ Future<void> _startServiceLogic(
     } catch (e) {
       log.severe('updateAd failed: $e');
     }
+
+    // Start 5-second cooldown
+    Timer(const Duration(seconds: 5), () {
+      isAdUpdating = false;
+      // If data changed during cooldown, perform one final sync
+      if (needsTrailingUpdate && advertisingOn) {
+        updateAd();
+      }
+    });
   }
 
   log.info('Setting up location stream...');
