@@ -256,7 +256,7 @@ Future<void> _startServiceLogic(
           device.publicKey = existing.publicKey;
           device.lastPictureSync = existing.lastPictureSync;
 
-          bool versionChanged = existing.versionTag != discoveredVersionTag;
+          bool versionChanged = versionTag != null && existing.versionTag != versionTag;
           bool needsForcedSync =
               existing.lastPictureSync == null ||
               DateTime.now().difference(existing.lastPictureSync!).inHours >=
@@ -479,6 +479,10 @@ Future<void> _fetchFullMetadata(
   } catch (e) {
     log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
+    await device.disconnect();
+  }
+}
+ {
     await device.disconnect();
   }
 }
