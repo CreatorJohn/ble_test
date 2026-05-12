@@ -27,31 +27,41 @@ const FoundDeviceSchema = CollectionSchema(
       name: r'lastSeen',
       type: IsarType.dateTime,
     ),
-    r'name': PropertySchema(id: 2, name: r'name', type: IsarType.string),
-    r'profileHash': PropertySchema(
+    r'latitude': PropertySchema(
+      id: 2,
+      name: r'latitude',
+      type: IsarType.double,
+    ),
+    r'longitude': PropertySchema(
       id: 3,
+      name: r'longitude',
+      type: IsarType.double,
+    ),
+    r'name': PropertySchema(id: 4, name: r'name', type: IsarType.string),
+    r'profileHash': PropertySchema(
+      id: 5,
       name: r'profileHash',
       type: IsarType.string,
     ),
     r'profilePicture': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'profilePicture',
       type: IsarType.longList,
     ),
     r'publicKey': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'publicKey',
       type: IsarType.longList,
     ),
     r'remoteId': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'remoteId',
       type: IsarType.string,
     ),
-    r'rssi': PropertySchema(id: 7, name: r'rssi', type: IsarType.long),
-    r'stableId': PropertySchema(id: 8, name: r'stableId', type: IsarType.long),
+    r'rssi': PropertySchema(id: 9, name: r'rssi', type: IsarType.long),
+    r'stableId': PropertySchema(id: 10, name: r'stableId', type: IsarType.long),
     r'versionTag': PropertySchema(
-      id: 9,
+      id: 11,
       name: r'versionTag',
       type: IsarType.long,
     ),
@@ -154,14 +164,16 @@ void _foundDeviceSerialize(
 ) {
   writer.writeDateTime(offsets[0], object.lastPictureSync);
   writer.writeDateTime(offsets[1], object.lastSeen);
-  writer.writeString(offsets[2], object.name);
-  writer.writeString(offsets[3], object.profileHash);
-  writer.writeLongList(offsets[4], object.profilePicture);
-  writer.writeLongList(offsets[5], object.publicKey);
-  writer.writeString(offsets[6], object.remoteId);
-  writer.writeLong(offsets[7], object.rssi);
-  writer.writeLong(offsets[8], object.stableId);
-  writer.writeLong(offsets[9], object.versionTag);
+  writer.writeDouble(offsets[2], object.latitude);
+  writer.writeDouble(offsets[3], object.longitude);
+  writer.writeString(offsets[4], object.name);
+  writer.writeString(offsets[5], object.profileHash);
+  writer.writeLongList(offsets[6], object.profilePicture);
+  writer.writeLongList(offsets[7], object.publicKey);
+  writer.writeString(offsets[8], object.remoteId);
+  writer.writeLong(offsets[9], object.rssi);
+  writer.writeLong(offsets[10], object.stableId);
+  writer.writeLong(offsets[11], object.versionTag);
 }
 
 FoundDevice _foundDeviceDeserialize(
@@ -174,14 +186,16 @@ FoundDevice _foundDeviceDeserialize(
   object.id = id;
   object.lastPictureSync = reader.readDateTimeOrNull(offsets[0]);
   object.lastSeen = reader.readDateTime(offsets[1]);
-  object.name = reader.readStringOrNull(offsets[2]);
-  object.profileHash = reader.readStringOrNull(offsets[3]);
-  object.profilePicture = reader.readLongList(offsets[4]);
-  object.publicKey = reader.readLongList(offsets[5]);
-  object.remoteId = reader.readString(offsets[6]);
-  object.rssi = reader.readLong(offsets[7]);
-  object.stableId = reader.readLong(offsets[8]);
-  object.versionTag = reader.readLongOrNull(offsets[9]);
+  object.latitude = reader.readDoubleOrNull(offsets[2]);
+  object.longitude = reader.readDoubleOrNull(offsets[3]);
+  object.name = reader.readStringOrNull(offsets[4]);
+  object.profileHash = reader.readStringOrNull(offsets[5]);
+  object.profilePicture = reader.readLongList(offsets[6]);
+  object.publicKey = reader.readLongList(offsets[7]);
+  object.remoteId = reader.readString(offsets[8]);
+  object.rssi = reader.readLong(offsets[9]);
+  object.stableId = reader.readLong(offsets[10]);
+  object.versionTag = reader.readLongOrNull(offsets[11]);
   return object;
 }
 
@@ -197,20 +211,24 @@ P _foundDeviceDeserializeProp<P>(
     case 1:
       return (reader.readDateTime(offset)) as P;
     case 2:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 3:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDoubleOrNull(offset)) as P;
     case 4:
-      return (reader.readLongList(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 5:
-      return (reader.readLongList(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 6:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongList(offset)) as P;
     case 7:
-      return (reader.readLong(offset)) as P;
+      return (reader.readLongList(offset)) as P;
     case 8:
-      return (reader.readLong(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 9:
+      return (reader.readLong(offset)) as P;
+    case 10:
+      return (reader.readLong(offset)) as P;
+    case 11:
       return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -802,6 +820,193 @@ extension FoundDeviceQueryFilter
           includeLower: includeLower,
           upper: upper,
           includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  latitudeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'latitude'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  latitudeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'latitude'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> latitudeEqualTo(
+    double? value, {
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'latitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  latitudeGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'latitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  latitudeLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'latitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition> latitudeBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'latitude',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'longitude'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'longitude'),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeEqualTo(double? value, {double epsilon = Query.epsilon}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'longitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeGreaterThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'longitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeLessThan(
+    double? value, {
+    bool include = false,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'longitude',
+          value: value,
+
+          epsilon: epsilon,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterFilterCondition>
+  longitudeBetween(
+    double? lower,
+    double? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    double epsilon = Query.epsilon,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'longitude',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+
+          epsilon: epsilon,
         ),
       );
     });
@@ -1747,6 +1952,30 @@ extension FoundDeviceQuerySortBy
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLatitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latitude', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLatitudeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latitude', Sort.desc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLongitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'longitude', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByLongitudeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'longitude', Sort.desc);
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> sortByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -1859,6 +2088,30 @@ extension FoundDeviceQuerySortThenBy
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByLatitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latitude', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByLatitudeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'latitude', Sort.desc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByLongitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'longitude', Sort.asc);
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByLongitudeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'longitude', Sort.desc);
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QAfterSortBy> thenByName() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'name', Sort.asc);
@@ -1947,6 +2200,18 @@ extension FoundDeviceQueryWhereDistinct
     });
   }
 
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByLatitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'latitude');
+    });
+  }
+
+  QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByLongitude() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'longitude');
+    });
+  }
+
   QueryBuilder<FoundDevice, FoundDevice, QDistinct> distinctByName({
     bool caseSensitive = true,
   }) {
@@ -2020,6 +2285,18 @@ extension FoundDeviceQueryProperty
   QueryBuilder<FoundDevice, DateTime, QQueryOperations> lastSeenProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'lastSeen');
+    });
+  }
+
+  QueryBuilder<FoundDevice, double?, QQueryOperations> latitudeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'latitude');
+    });
+  }
+
+  QueryBuilder<FoundDevice, double?, QQueryOperations> longitudeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'longitude');
     });
   }
 

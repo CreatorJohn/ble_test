@@ -104,14 +104,12 @@ class BLEAdvertiser {
     _log.fine('Setting up BLE callbacks');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
-      _log.info('Advertising status updated: isAdvertising=$isAdvertising');
-      _advertisingStatusController.add(isAdvertising);
+      _log.info('Advertising status update from plugin: isAdvertising=$isAdvertising, error=$error');
       _isAdvertising = isAdvertising;
+      _advertisingStatusController.add(isAdvertising);
 
       if (error != null) {
-        _log.severe('Error occurred while updating advertising status: $error');
-        _advertisingStatusController.add(false);
-        _isAdvertising = false;
+        _log.severe('Plugin reported advertisement error: $error');
       }
     });
 

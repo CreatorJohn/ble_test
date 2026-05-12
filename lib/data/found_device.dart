@@ -23,6 +23,10 @@ class FoundDevice {
 
   int? versionTag; // 14-bit hash prefix from advertisement
 
+  double? latitude;
+
+  double? longitude;
+
   List<int>? profilePicture;
 
   List<int>? publicKey; // 32-byte X25519 public key

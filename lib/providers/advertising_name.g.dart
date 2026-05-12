@@ -41,7 +41,7 @@ final class IsAdvertisingProvider
   }
 }
 
-String _$isAdvertisingHash() => r'c4cd393bf29b9af26a3df16d10e1c22bbf2af5cd';
+String _$isAdvertisingHash() => r'e20d3fe63de8a4516024e1bf3766913fcb2e4630';
 
 abstract class _$IsAdvertising extends $Notifier<bool> {
   bool build();

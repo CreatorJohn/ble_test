@@ -144,7 +144,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ref.read(advertisingNameProvider.notifier).change(newName);
                   
                   if (isServiceRunning) {
-                    FlutterBackgroundService().invoke("setAdvertisingName", {
+                    FlutterBackgroundService().invoke("startAdvertising", {
                       "name": newName,
                     });
                   }

@@ -59,26 +59,40 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
+final Logger log = Logger('BackgroundService');
+
 @pragma("vm:entry-point")
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
+  final advertiser = BLEAdvertiser();
+
   // 1. Setup isolate-level logging
-  final Logger log = Logger('BackgroundService');
   Logger.root.level = Level.ALL;
   Logger.root.onRecord.listen((record) {
     service.invoke('log', {
       'message':
-          '[BG] [${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}',
+          '[BG] [${record.time.hour}:${record.time.minute}:${record.time.second}] [${record.level.name}] ${record.loggerName}: ${record.message}',
       'level': record.level.name,
     });
   });
 
   log.info('Service isolate started');
 
+  // Catch unhandled errors in the background isolate
+  runZonedGuarded(() async {
+    await _startServiceLogic(service, advertiser);
+  }, (error, stack) {
+    log.severe('Top-level background error: $error', error, stack);
+  });
+}
+
+Future<void> _startServiceLogic(
+  ServiceInstance service,
+  BLEAdvertiser advertiser,
+) async {
   await Future.delayed(const Duration(seconds: 1));
 
-  final advertiser = BLEAdvertiser();
   try {
     log.info('Initializing BLEAdvertiser...');
     await advertiser.initialize(ignorePermissions: true);
@@ -89,12 +103,13 @@ void onStart(ServiceInstance service) async {
 
   final prefs = await SharedPreferences.getInstance();
   String currentName = prefs.getString('advertising_name_v2') ?? "BLE Test";
+  bool advertisingOn = prefs.getBool('advertising_on') ?? false;
   double currentLat = 0.0;
   double currentLon = 0.0;
   bool isOnline = false;
-  bool advertisingOn = false;
 
   Future<void> updateAd() async {
+    if (!advertisingOn) return;
     try {
       log.info('Updating advertisement: name=$currentName, online=$isOnline');
       await advertiser.startAdvertising(
@@ -106,6 +121,11 @@ void onStart(ServiceInstance service) async {
     } catch (e) {
       log.severe('updateAd failed: $e');
     }
+  }
+
+  if (advertisingOn) {
+    log.info('Auto-starting advertisement on service start...');
+    updateAd();
   }
 
   log.info('Setting up location stream...');
@@ -142,61 +162,85 @@ void onStart(ServiceInstance service) async {
 
     for (final ScanResult result in results) {
       final advData = result.advertisementData;
+      final remoteId = result.device.remoteId.toString();
 
       // Manufacturer ID 0xFFFF is used for our custom mesh payload
       final meshData = advData.manufacturerData[0xFFFF];
       if (meshData == null || meshData.length < 5) continue;
 
-      final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
-      final stableId = buffer.getUint32(0, Endian.big);
-      // Byte 4 contains the version tag (top 6 bits)
-      final discoveredVersionTag = (meshData[4] >> 2) & 0x3F;
+      int? stableId;
+      int? versionTag;
+      String? profileHash;
+      double? lat;
+      double? lon;
+
+      if (meshData.length == 5) {
+        // Main Packet: [ID(4)][Version/Flags(1)]
+        final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
+        stableId = buffer.getUint32(0, Endian.big);
+        versionTag = (meshData[4] >> 2) & 0x3F;
+      } else if (meshData.length == 12) {
+        // Scan Response: [Lat(3)][Lon(3)][Hash(6)]
+        lat = MeshPacketEncoder.decodeCoordinate(
+          (meshData[0] << 16) | (meshData[1] << 8) | meshData[2],
+          true,
+        );
+        lon = MeshPacketEncoder.decodeCoordinate(
+          (meshData[3] << 16) | (meshData[4] << 8) | meshData[5],
+          false,
+        );
+        profileHash = meshData
+            .sublist(6, 12)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
+      } else if (meshData.length >= 17) {
+        // Merged: [Main(5)][ScanResponse(12)]
+        final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
+        stableId = buffer.getUint32(0, Endian.big);
+        versionTag = (meshData[4] >> 2) & 0x3F;
+
+        lat = MeshPacketEncoder.decodeCoordinate(
+          (meshData[5] << 16) | (meshData[6] << 8) | meshData[7],
+          true,
+        );
+        lon = MeshPacketEncoder.decodeCoordinate(
+          (meshData[8] << 16) | (meshData[9] << 8) | meshData[10],
+          false,
+        );
+        profileHash = meshData
+            .sublist(11, 17)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
+      }
+
+      // If we don't have a stableId in this packet, try to find it in the DB by remoteId
+      // This helps when we receive a Scan Response packet alone.
+      if (stableId == null) {
+        final existingByRemote = await isarService.db.foundDevices
+            .where()
+            .remoteIdEqualTo(remoteId)
+            .findFirst();
+        if (existingByRemote != null) {
+          stableId = existingByRemote.stableId;
+        }
+      }
+
+      if (stableId == null) {
+        // We need at least a stableId to proceed
+        continue;
+      }
 
       final device = FoundDevice()
         ..stableId = stableId
-        ..remoteId = result.device.remoteId.toString()
+        ..remoteId = remoteId
         ..name = advData.advName
         ..rssi = result.rssi
-        ..lastSeen = DateTime.now()
-        ..versionTag = discoveredVersionTag;
+        ..lastSeen = DateTime.now();
 
-      // If the scanner merged the Scan Response or if we are seeing the 12-byte metadata block
-      if (meshData.length >= 12) {
-        // This is likely our Scan Response Manufacturer Data
-        final lat24 = (meshData[0] << 16) | (meshData[1] << 8) | meshData[2];
-        final lon24 = (meshData[3] << 16) | (meshData[4] << 8) | meshData[5];
-        final fullHashBytes = meshData.sublist(6, 12);
-
-        // However, wait: Our encodeScanResponseManufacturerData is exactly 12 bytes.
-        // But ble_peripheral on Android might send them separately.
-        // If meshData.length is exactly 12, it's the Scan Response payload.
-        // If it's 17+, it might be merged. Let's handle both.
-
-        int offset = 0;
-        if (meshData.length >= 17 &&
-            stableId == buffer.getUint32(0, Endian.big)) {
-          // Merged: [ID(4)][Flag(1)][Lat(3)][Lon(3)][Hash(6)] = 17 bytes
-          offset = 5;
-        }
-
-        if (meshData.length == 12 || offset == 5) {
-          final latVal =
-              (meshData[offset + 0] << 16) |
-              (meshData[offset + 1] << 8) |
-              meshData[offset + 2];
-          final lonVal =
-              (meshData[offset + 3] << 16) |
-              (meshData[offset + 4] << 8) |
-              meshData[offset + 5];
-          final hashBytes = meshData.sublist(offset + 6, offset + 12);
-
-          device.profileHash = hashBytes
-              .map((b) => b.toRadixString(16).padLeft(2, '0'))
-              .join();
-          // Note: Logic to update lat/long in DB would go here if we had fields for them in FoundDevice
-          // Currently FoundDevice only stores profileHash and versionTag.
-        }
-      }
+      if (versionTag != null) device.versionTag = versionTag;
+      if (profileHash != null) device.profileHash = profileHash;
+      if (lat != null) device.latitude = lat;
+      if (lon != null) device.longitude = lon;
 
       try {
         final existing = await isarService.db.foundDevices
@@ -324,9 +368,12 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  service.on('startAdvertising').listen((event) {
+  service.on('startAdvertising').listen((event) async {
     final name = event?['name'];
     advertisingOn = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('advertising_on', true);
+
     log.info("Preparing to advertise with $name...");
     if (name is String) {
       log.info('Setting advertising name to: $name');
@@ -346,6 +393,8 @@ void onStart(ServiceInstance service) async {
 
   service.on("stopAdvertising").listen((_) async {
     advertisingOn = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('advertising_on', false);
     await advertiser.stopAdvertising();
   });
 }
