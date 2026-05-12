@@ -25,6 +25,7 @@ class DiscoveryScreen extends ConsumerWidget {
     final isScanning = ref.watch(isScanningProvider).value ?? false;
     final progress = ref.watch(scanProgressProvider).value ?? 0.0;
     final scanStatus = ref.watch(scanStatusProvider).value ?? {};
+    final isAdvertising = ref.watch(isAdvertisingProvider);
     final remainingSeconds = scanStatus['remainingSeconds'] as int?;
 
     return ScaffoldWrapper(
@@ -74,7 +75,7 @@ class DiscoveryScreen extends ConsumerWidget {
                               ref.read(advertisingNameProvider).value ??
                               "BLE Test";
                           FlutterBackgroundService().invoke(
-                            "setAdvertisingName",
+                            "startAdvertising",
                             {"name": adName},
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -105,6 +106,13 @@ class DiscoveryScreen extends ConsumerWidget {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 32.0,
+              vertical: 8.0,
+            ),
+            child: Text("Advertising ${isAdvertising ? "on" : "off"}"),
+          ),
           if (isRunning)
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -115,7 +123,7 @@ class DiscoveryScreen extends ConsumerWidget {
                 children: [
                   LinearProgressIndicator(
                     value: progress,
-                    color: isScanning ? null : Colors.orange,
+                    color: progress > 0.0 ? null : Colors.orange,
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -126,9 +134,12 @@ class DiscoveryScreen extends ConsumerWidget {
                   ),
                 ],
               ),
-            ),          const Divider(),
+            ),
+          const Divider(),
           Expanded(
-            child: ref.watch(discoveredDevicesProvider).when(
+            child: ref
+                .watch(discoveredDevicesProvider)
+                .when(
                   data: (devices) {
                     if (devices.isEmpty) {
                       return const Center(child: Text("No devices found..."));
@@ -168,7 +179,8 @@ class DiscoveryScreen extends ConsumerWidget {
                                       item.remoteId,
                                     ).connectionState,
                                     builder: (context, snapshot) {
-                                      final state = snapshot.data ??
+                                      final state =
+                                          snapshot.data ??
                                           BluetoothConnectionState.disconnected;
                                       if (state ==
                                           BluetoothConnectionState.connected) {
@@ -188,7 +200,8 @@ class DiscoveryScreen extends ConsumerWidget {
                                       item.remoteId,
                                     ).bondState,
                                     builder: (context, snapshot) {
-                                      final state = snapshot.data ??
+                                      final state =
+                                          snapshot.data ??
                                           BluetoothBondState.none;
                                       if (state == BluetoothBondState.bonded) {
                                         return const Padding(

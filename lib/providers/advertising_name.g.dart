@@ -9,6 +9,58 @@ part of 'advertising_name.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 
+@ProviderFor(IsAdvertising)
+final isAdvertisingProvider = IsAdvertisingProvider._();
+
+final class IsAdvertisingProvider
+    extends $NotifierProvider<IsAdvertising, bool> {
+  IsAdvertisingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isAdvertisingProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$isAdvertisingHash();
+
+  @$internal
+  @override
+  IsAdvertising create() => IsAdvertising();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$isAdvertisingHash() => r'c4cd393bf29b9af26a3df16d10e1c22bbf2af5cd';
+
+abstract class _$IsAdvertising extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}
+
 @ProviderFor(AdvertisingName)
 final advertisingNameProvider = AdvertisingNameProvider._();
 

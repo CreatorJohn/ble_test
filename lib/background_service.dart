@@ -171,16 +171,23 @@ void onStart(ServiceInstance service) async {
         // But ble_peripheral on Android might send them separately.
         // If meshData.length is exactly 12, it's the Scan Response payload.
         // If it's 17+, it might be merged. Let's handle both.
-        
+
         int offset = 0;
-        if (meshData.length >= 17 && stableId == buffer.getUint32(0, Endian.big)) {
-           // Merged: [ID(4)][Flag(1)][Lat(3)][Lon(3)][Hash(6)] = 17 bytes
-           offset = 5;
+        if (meshData.length >= 17 &&
+            stableId == buffer.getUint32(0, Endian.big)) {
+          // Merged: [ID(4)][Flag(1)][Lat(3)][Lon(3)][Hash(6)] = 17 bytes
+          offset = 5;
         }
 
         if (meshData.length == 12 || offset == 5) {
-          final latVal = (meshData[offset + 0] << 16) | (meshData[offset + 1] << 8) | meshData[offset + 2];
-          final lonVal = (meshData[offset + 3] << 16) | (meshData[offset + 4] << 8) | meshData[offset + 5];
+          final latVal =
+              (meshData[offset + 0] << 16) |
+              (meshData[offset + 1] << 8) |
+              meshData[offset + 2];
+          final lonVal =
+              (meshData[offset + 3] << 16) |
+              (meshData[offset + 4] << 8) |
+              meshData[offset + 5];
           final hashBytes = meshData.sublist(offset + 6, offset + 12);
 
           device.profileHash = hashBytes
@@ -317,9 +324,10 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  service.on('setAdvertisingName').listen((event) {
+  service.on('startAdvertising').listen((event) {
     final name = event?['name'];
     advertisingOn = true;
+    log.info("Preparing to advertise with $name...");
     if (name is String) {
       log.info('Setting advertising name to: $name');
       currentName = name;

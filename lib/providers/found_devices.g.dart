@@ -188,7 +188,7 @@ final class ScanProgressProvider
   }
 }
 
-String _$scanProgressHash() => r'709a7700a96e0ef30f2df9fe6f02fcbf320eeba0';
+String _$scanProgressHash() => r'73ccb12b51761b0d5237586e4739003c31c65674';
 
 @ProviderFor(discoveredDevices)
 final discoveredDevicesProvider = DiscoveredDevicesProvider._();
