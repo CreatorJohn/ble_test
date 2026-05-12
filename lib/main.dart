@@ -26,6 +26,8 @@ void main() async {
     await Permission.locationAlways.request();
   }
 
+  await initializeBackgroundService();
+
   // 3. Safety delay for Chromebook/Android stabilization after dialogs close
   await Future.delayed(const Duration(milliseconds: 500));
 

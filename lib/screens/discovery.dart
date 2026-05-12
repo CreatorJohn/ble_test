@@ -41,16 +41,6 @@ class DiscoveryScreen extends ConsumerWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ElevatedButton.icon(
-                  onPressed: isRunning
-                      ? null
-                      : () async {
-                          await initializeBackgroundService();
-                        },
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text("Start Background Scanner"),
-                ),
-                const SizedBox(width: 8),
                 IconButton.filledTonal(
                   onPressed: () => _showResetConfirmation(context, ref),
                   icon: const Icon(Icons.refresh),
@@ -63,7 +53,7 @@ class DiscoveryScreen extends ConsumerWidget {
                   builder: (context, snapshot) {
                     final advertising = snapshot.data ?? false;
 
-                    return IconButton.filledTonal(
+                    return TextButton.icon(
                       onPressed: () {
                         if (advertising) {
                           FlutterBackgroundService().invoke("stopAdvertising");
@@ -92,8 +82,7 @@ class DiscoveryScreen extends ConsumerWidget {
                             ? Icons.record_voice_over
                             : Icons.play_disabled,
                       ),
-                      tooltip:
-                          "Force Broadcast ${advertising ? "Start" : "Stop"}",
+                      label: Text(advertising ? "Broadcasting" : "Broadcast"),
                     );
                   },
                 ),
@@ -451,6 +440,9 @@ class DiscoveryScreen extends ConsumerWidget {
 
               // 2. Clear the database
               await IsarService().clearDevices();
+
+              // 3. Restart the service
+              await initializeBackgroundService();
 
               if (context.mounted) {
                 Navigator.pop(context);
