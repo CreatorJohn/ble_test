@@ -127,10 +127,12 @@ Future<void> _startServiceLogic(
     }
   }
 
+  /*
   if (advertisingOn) {
     log.info('Auto-starting advertisement on service start...');
     updateAd();
   }
+  */
 
   log.info('Setting up location stream...');
   Geolocator.getPositionStream(
@@ -392,7 +394,7 @@ Future<void> _startServiceLogic(
     if (status is bool) {
       log.info('Setting online status to: $status');
       isOnline = status;
-      if (advertisingOn) updateAd();
+      // if (advertisingOn) updateAd();
     }
   });
 

@@ -27,6 +27,7 @@ class BLEAdvertiser {
 
   /// Maximum length for the display name in the scan response.
   /// Calculated as: 31 (Total) - 16 (Mfg Data + Header) - 2 (Name Header) = 13
+  /// Note: The BLE peripheral plugin has been modified to put the name ONLY in scan response.
   static const int maxNameLength = 13;
 
   static bool _isAdvertising = false;
