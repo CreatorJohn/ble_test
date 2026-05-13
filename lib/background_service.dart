@@ -184,6 +184,7 @@ Future<void> _startServiceLogic(
   MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
+  final Set<int> activeSyncIds = {};
 
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isarService.isOpen) return;
@@ -306,10 +307,17 @@ Future<void> _startServiceLogic(
         await isarService.putFoundDevice(device);
 
         if (needsMetadataUpdate) {
-          log.info(
-            'Syncing metadata for $stableId (Reason: ${existing == null ? "New" : "Stale/Changed"})',
-          );
-          _fetchFullMetadata(result.device, isarService, stableId, log);
+          if (!activeSyncIds.contains(stableId)) {
+            activeSyncIds.add(stableId);
+            log.info(
+              'Syncing metadata for $stableId (Reason: ${existing == null ? "New" : "Stale/Changed"})',
+            );
+            _fetchFullMetadata(result.device, isarService, stableId, log).then((_) {
+              activeSyncIds.remove(stableId);
+            }).catchError((e) {
+              activeSyncIds.remove(stableId);
+            });
+          }
         }
       } catch (e) {
         log.warning('Error processing scan result for $stableId: $e');
@@ -505,7 +513,7 @@ Future<void> _fetchFullMetadata(
         } catch (e) {
           attempts++;
           if (attempts >= 3) rethrow;
-          log.warning('Read failed, retrying (${attempts}/3)... $e');
+          log.warning('Read failed, retrying ($attempts/3)... $e');
           await Future.delayed(const Duration(seconds: 1));
         }
       }

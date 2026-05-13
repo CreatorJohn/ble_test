@@ -283,9 +283,7 @@ class BLEAdvertiser {
     } catch (e) {
       if (e.toString().contains("UnsupportedOperationException") ||
           e.toString().contains("Advertising not supported")) {
-        _log.warning(
-          'Detected unsupported advertising hardware.',
-        );
+        _log.warning('Detected unsupported advertising hardware.');
       } else {
         _log.severe('Failed to start advertising: $e');
       }

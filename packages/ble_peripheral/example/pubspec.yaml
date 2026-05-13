@@ -12,6 +12,7 @@ dependencies:
   get: ^4.6.5
   ble_peripheral: 
     path: ../
+  permission_handler: ^12.0.1
 
 dev_dependencies: 
   flutter_lints: ^2.0.0

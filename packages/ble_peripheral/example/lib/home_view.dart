@@ -1,6 +1,7 @@
 import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'home_controller.dart';
 
 class HomeView extends GetView<HomeController> {
@@ -34,9 +35,16 @@ class HomeView extends GetView<HomeController> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    const ElevatedButton(
-                      onPressed: BlePeripheral.askBlePermission,
-                      child: Text('Ask Permission'),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await [
+                          Permission.bluetoothScan,
+                          Permission.bluetoothConnect,
+                          Permission.bluetoothAdvertise,
+                          Permission.location,
+                        ].request();
+                      },
+                      child: const Text('Ask Permission'),
                     ),
                     ElevatedButton(
                       onPressed: controller.addServices,
