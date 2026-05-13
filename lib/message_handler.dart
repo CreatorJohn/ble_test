@@ -237,6 +237,30 @@ class MessageHandler {
         final chunks = ChunkedTransferManager.generateChunks(
           encrypted,
           messageId,
+          maxChunkSize: maxChunkSize,
+        );
+
+        for (final chunk in chunks) {
+          await messageChar.write(chunk, withoutResponse: false);
+        }
+        _log.info('Profile picture pushed to $targetStableId');
+      }
+    } catch (e) {
+      _log.severe('Failed to push profile picture: $e');
+    } finally {
+      try {
+        await device.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+sconnect();
+      } catch (_) {}
+    }
+  }
+}
+  encrypted,
+          messageId,
         );
 
         for (final chunk in chunks) {
