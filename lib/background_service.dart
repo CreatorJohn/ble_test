@@ -543,8 +543,9 @@ Future<void> _fetchFullMetadata(
         if (picChar != null &&
             (existing.profilePicture == null ||
                 existing.profileHash != hashHex)) {
-          log.info('Downloading profile picture for $stableId...');
-          existing.profilePicture = await robustRead(picChar);
+          log.info('Requesting profile picture sync from $stableId...');
+          // Instead of reading, we write a "ping" (0x01) to trigger a push
+          await picChar.write([0x01], withoutResponse: true);
         }
 
         if (locChar != null) {

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:ble_test/background_service.dart';
@@ -393,6 +394,21 @@ class DiscoveryScreen extends ConsumerWidget {
         license: License.free,
       );
 
+      // --- MTU Negotiation Start ---
+      if (Platform.isAndroid) {
+        try {
+          await bleDevice.requestMtu(517);
+        } catch (e) {
+          debugPrint('MTU Request failed: $e');
+        }
+      }
+
+      final mtu = await bleDevice.mtu.first
+          .timeout(const Duration(seconds: 3), onTimeout: () => 23);
+      final maxChunkSize = (mtu - 10).clamp(20, 500);
+      debugPrint('Negotiated MTU: $mtu, Chunk size: $maxChunkSize');
+      // --- MTU Negotiation End ---
+
       try {
         final services = await bleDevice.discoverServices();
         BluetoothCharacteristic? messageChar;
@@ -596,29 +612,6 @@ class _StatusIndicator extends StatelessWidget {
               boxShadow: label != "INACTIVE"
                   ? [
                       BoxShadow(
-                        color: color.withValues(alpha: 0.5),
-                        blurRadius: 4,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-    BoxShadow(
                         color: color.withValues(alpha: 0.5),
                         blurRadius: 4,
                         spreadRadius: 1,

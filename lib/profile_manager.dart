@@ -50,10 +50,10 @@ class ProfileManager {
     if (croppedFile == null) return;
 
     final bytes = await croppedFile.readAsBytes();
-    final pngBytes = await compute(_processImage, bytes);
+    final jpgBytes = await compute(_processImage, bytes);
     
-    if (pngBytes != null) {
-      await saveProfilePicture(pngBytes);
+    if (jpgBytes != null) {
+      await saveProfilePicture(jpgBytes);
     }
   }
 

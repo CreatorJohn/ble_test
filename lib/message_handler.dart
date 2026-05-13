@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/chunked_transfer_manager.dart';
@@ -34,6 +35,21 @@ class MessageHandler {
         final type = decryptedData[0];
         final payload = decryptedData.sublist(1);
 
+        if (type == typeProfilePic) {
+          final isar = IsarService();
+          final device = await isar.db.foundDevices
+              .where()
+              .stableIdEqualTo(senderStableId)
+              .findFirst();
+          if (device != null) {
+            device.profilePicture = payload;
+            device.lastPictureSync = DateTime.now();
+            await isar.putFoundDevice(device);
+            _log.info('Updated profile picture for $senderStableId');
+          }
+          return; // Don't save as a chat message
+        }
+
         final myStableId = await ProfileManager.getStableDeviceId();
         final message = Message()
           ..senderStableId = senderStableId
@@ -54,7 +70,8 @@ class MessageHandler {
         }
 
         await IsarService().putMessage(message);
-        _log.info('Decrypted and saved message from $senderStableId (Type: $type)');
+        _log.info(
+            'Decrypted and saved message from $senderStableId (Type: $type)');
       } catch (e) {
         _log.severe('Failed to decrypt or decode message: $e');
       }
@@ -139,7 +156,7 @@ class MessageHandler {
     );
 
     final secretKey = await sharedSecret.extract();
-    
+
     final nonce = encryptedData.sublist(0, 12);
     final mac = Mac(encryptedData.sublist(12, 28));
     final ciphertext = encryptedData.sublist(28);
@@ -152,7 +169,8 @@ class MessageHandler {
     return Uint8List.fromList(cleartext);
   }
 
-  static Future<Uint8List?> getEncryptedPayload(int receiverStableId, {
+  static Future<Uint8List?> getEncryptedPayload(
+    int receiverStableId, {
     String? text,
     Uint8List? image,
   }) async {
@@ -192,12 +210,27 @@ class MessageHandler {
     try {
       _log.info('Connecting to $targetStableId to push profile picture...');
       await device.connect(
-        timeout: const Duration(seconds: 15),
-        autoConnect: false,
-        license: License.free,
-      );
+          timeout: const Duration(seconds: 15),
+          autoConnect: false,
+          license: License.free);
+
+      // --- MTU Negotiation Start ---
+      if (Platform.isAndroid) {
+        try {
+          await device.requestMtu(517);
+        } catch (e) {
+          _log.warning('MTU Request failed: $e');
+        }
+      }
+
+      final mtu = await device.mtu.first
+          .timeout(const Duration(seconds: 3), onTimeout: () => 23);
+      final maxChunkSize = (mtu - 10).clamp(20, 500);
+      _log.info('Negotiated MTU: $mtu, Chunk size: $maxChunkSize');
+      // --- MTU Negotiation End ---
 
       final services = await device.discoverServices();
+
       BluetoothCharacteristic? messageChar;
       for (final s in services) {
         if (s.uuid.toString().toLowerCase() ==
@@ -242,30 +275,6 @@ class MessageHandler {
 
         for (final chunk in chunks) {
           await messageChar.write(chunk, withoutResponse: false);
-        }
-        _log.info('Profile picture pushed to $targetStableId');
-      }
-    } catch (e) {
-      _log.severe('Failed to push profile picture: $e');
-    } finally {
-      try {
-        await device.disconnect();
-      } catch (_) {}
-    }
-  }
-}
-sconnect();
-      } catch (_) {}
-    }
-  }
-}
-  encrypted,
-          messageId,
-        );
-
-        for (final chunk in chunks) {
-          await messageChar.write(chunk, withoutResponse: true);
-          await Future.delayed(const Duration(milliseconds: 10));
         }
         _log.info('Profile picture pushed to $targetStableId');
       }
