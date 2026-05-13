@@ -69,7 +69,7 @@ class ProfileManager {
       interpolation: img.Interpolation.linear,
     );
 
-    return Uint8List.fromList(img.encodePng(resized));
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 75));
   }
 
   static Future<int> getStableDeviceId() async {
