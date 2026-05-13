@@ -436,13 +436,13 @@ class DiscoveryScreen extends ConsumerWidget {
           final chunks = ChunkedTransferManager.generateChunks(
             encryptedPayload,
             messageId,
+            maxChunkSize: maxChunkSize,
           );
 
           int sent = 0;
           for (final chunk in chunks) {
-            await messageChar.write(chunk, withoutResponse: true);
+            await messageChar.write(chunk, withoutResponse: false);
             sent++;
-            await Future.delayed(const Duration(milliseconds: 10));
           }
 
           await MessageHandler.handleOutgoingMessage(
@@ -596,6 +596,29 @@ class _StatusIndicator extends StatelessWidget {
               boxShadow: label != "INACTIVE"
                   ? [
                       BoxShadow(
+                        color: color.withValues(alpha: 0.5),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+    BoxShadow(
                         color: color.withValues(alpha: 0.5),
                         blurRadius: 4,
                         spreadRadius: 1,
