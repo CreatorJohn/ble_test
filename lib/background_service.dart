@@ -32,8 +32,7 @@ Future<void> initializeBackgroundService() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
   await service.configure(
@@ -185,6 +184,7 @@ Future<void> _startServiceLogic(
 
   final myStableId = await ProfileManager.getStableDeviceId();
   final Set<int> activeSyncIds = {};
+  final Map<int, DateTime> lastSyncAttempt = {};
 
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isarService.isOpen) return;
@@ -307,12 +307,18 @@ Future<void> _startServiceLogic(
         await isarService.putFoundDevice(device);
 
         if (needsMetadataUpdate) {
-          if (!activeSyncIds.contains(stableId)) {
+          final lastAttempt = lastSyncAttempt[stableId];
+          final bool isCooldownActive = lastAttempt != null &&
+              DateTime.now().difference(lastAttempt).inMinutes < 5;
+
+          if (!activeSyncIds.contains(stableId) && !isCooldownActive) {
             activeSyncIds.add(stableId);
+            lastSyncAttempt[stableId] = DateTime.now();
             log.info(
               'Syncing metadata for $stableId (Reason: ${existing == null ? "New" : "Stale/Changed"})',
             );
-            _fetchFullMetadata(result.device, isarService, stableId, log).then((_) {
+            _fetchFullMetadata(result.device, isarService, stableId, log)
+                .then((_) {
               activeSyncIds.remove(stableId);
             }).catchError((e) {
               activeSyncIds.remove(stableId);
@@ -463,9 +469,14 @@ Future<void> _fetchFullMetadata(
   Logger log,
 ) async {
   try {
+    // Small delay and explicit disconnect to clear any pending registration issues
+    try {
+      await device.disconnect();
+      await Future.delayed(const Duration(milliseconds: 500));
+    } catch (_) {}
+
     log.info('Connecting to $stableId to fetch metadata...');
     await device.connect(
-      timeout: const Duration(seconds: 15),
       autoConnect: false,
       license: License.free,
     );
@@ -523,9 +534,8 @@ Future<void> _fetchFullMetadata(
     if (hashChar != null) {
       log.info('Reading full hash from $stableId...');
       final hashBytes = await robustRead(hashChar);
-      final hashHex = hashBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      final hashHex =
+          hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
       final existing = await isar.db.foundDevices
           .where()
@@ -575,6 +585,14 @@ Future<void> _fetchFullMetadata(
       }
     }
   } catch (e) {
+    log.warning('Failed to fetch full metadata for $stableId: $e');
+  } finally {
+    try {
+      await device.disconnect();
+    } catch (_) {}
+  }
+}
+
     log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
     try {
