@@ -138,7 +138,9 @@ class BLEAdvertiser {
       value,
     ) {
       _log.info('Write request from $deviceId for $characteristicUuid');
-      if (characteristicUuid.toLowerCase() == messageCharUuid.toLowerCase()) {
+      final charUuidLower = characteristicUuid.toLowerCase();
+
+      if (charUuidLower == messageCharUuid.toLowerCase()) {
         if (value != null) {
           final isar = IsarService();
           if (isar.isOpen) {
@@ -153,6 +155,26 @@ class BLEAdvertiser {
               }
             });
           }
+        }
+      } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
+        _log.info('Received profile picture sync request from $deviceId');
+        final isar = IsarService();
+        if (isar.isOpen) {
+          isar.findDeviceByRemoteId(deviceId).then((device) {
+            if (device != null) {
+              ProfileManager.getProfilePicture().then((pic) {
+                if (pic != null) {
+                  MessageHandler.pushProfilePicture(
+                    targetStableId: device.stableId,
+                    targetRemoteId: deviceId,
+                    imageBytes: pic,
+                  );
+                }
+              });
+            } else {
+              _log.warning('Sync request from unknown MAC: $deviceId');
+            }
+          });
         }
       }
       return WriteRequestResult();
