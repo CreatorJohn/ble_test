@@ -49,43 +49,36 @@ class DiscoveryScreen extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(width: 8),
-                StreamBuilder(
-                  stream: BLEAdvertiser().advertisingStatusStream,
-                  builder: (context, snapshot) {
-                    final advertising = snapshot.data ?? false;
-
-                    return TextButton.icon(
-                      onPressed: () {
-                        if (advertising) {
-                          FlutterBackgroundService().invoke("stopAdvertising");
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Stopping broadcast")),
-                          );
-                        } else {
-                          final adName =
-                              ref.read(advertisingNameProvider).value ??
-                              "BLE Test";
-                          FlutterBackgroundService().invoke(
-                            "startAdvertising",
-                            {"name": adName},
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Attempting manual broadcast start with: $adName",
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      icon: Icon(
-                        advertising
-                            ? Icons.record_voice_over
-                            : Icons.play_disabled,
-                      ),
-                      label: Text(advertising ? "Broadcasting" : "Broadcast"),
-                    );
+                TextButton.icon(
+                  onPressed: () {
+                    if (isAdvertising) {
+                      FlutterBackgroundService().invoke("stopAdvertising");
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Stopping broadcast")),
+                      );
+                    } else {
+                      final adName =
+                          ref.read(advertisingNameProvider).value ?? "BLE Test";
+                      FlutterBackgroundService().invoke("startAdvertising", {
+                        "name": adName,
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isAdvertising
+                                ? "Attempting manual broadcast start with: $adName"
+                                : "Stopping broadcast",
+                          ),
+                        ),
+                      );
+                    }
                   },
+                  icon: Icon(
+                    isAdvertising
+                        ? Icons.record_voice_over
+                        : Icons.play_disabled,
+                  ),
+                  label: Text(isAdvertising ? "Broadcasting" : "Broadcast"),
                 ),
                 const SizedBox(width: 8),
                 _StatusIndicator(
@@ -146,16 +139,16 @@ class DiscoveryScreen extends ConsumerWidget {
                             ).colorScheme.primaryContainer,
                             backgroundImage:
                                 item.profilePicture != null &&
-                                        item.profilePicture!.isNotEmpty
-                                    ? MemoryImage(
-                                      Uint8List.fromList(item.profilePicture!),
-                                    )
-                                    : null,
+                                    item.profilePicture!.isNotEmpty
+                                ? MemoryImage(
+                                    Uint8List.fromList(item.profilePicture!),
+                                  )
+                                : null,
                             child:
                                 (item.profilePicture == null ||
-                                        item.profilePicture!.isEmpty)
-                                    ? const Icon(Icons.person)
-                                    : null,
+                                    item.profilePicture!.isEmpty)
+                                ? const Icon(Icons.person)
+                                : null,
                           ),
                           title: Row(
                             children: [
@@ -187,20 +180,18 @@ class DiscoveryScreen extends ConsumerWidget {
                               Row(
                                 children: [
                                   StreamBuilder<BluetoothConnectionState>(
-                                    stream:
-                                        BluetoothDevice.fromId(
-                                          item.remoteId,
-                                        ).connectionState,
+                                    stream: BluetoothDevice.fromId(
+                                      item.remoteId,
+                                    ).connectionState,
                                     builder: (context, snapshot) {
                                       final state =
                                           snapshot.data ??
                                           BluetoothConnectionState.disconnected;
                                       final color =
                                           state ==
-                                                  BluetoothConnectionState
-                                                      .connected
-                                              ? Colors.green
-                                              : Colors.grey;
+                                              BluetoothConnectionState.connected
+                                          ? Colors.green
+                                          : Colors.grey;
                                       return Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
@@ -403,8 +394,10 @@ class DiscoveryScreen extends ConsumerWidget {
         }
       }
 
-      final mtu = await bleDevice.mtu.first
-          .timeout(const Duration(seconds: 3), onTimeout: () => 23);
+      final mtu = await bleDevice.mtu.first.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 23,
+      );
       final maxChunkSize = (mtu - 10).clamp(20, 500);
       debugPrint('Negotiated MTU: $mtu, Chunk size: $maxChunkSize');
       // --- MTU Negotiation End ---
@@ -482,15 +475,19 @@ class DiscoveryScreen extends ConsumerWidget {
       String errorMessage = "Failed to send message: $e";
       if (e.toString().contains("connection canceled") ||
           e.toString().contains("10")) {
-        errorMessage = "Connection Rejected: The peer declined the connection request.";
+        errorMessage =
+            "Connection Rejected: The peer declined the connection request.";
       } else if (e.toString().contains("Timed out")) {
-        errorMessage = "Connection Timed Out: The peer is out of range or busy.";
+        errorMessage =
+            "Connection Timed Out: The peer is out of range or busy.";
       }
 
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(errorMessage),
-          backgroundColor: context.mounted ? Theme.of(context).colorScheme.error : null,
+          backgroundColor: context.mounted
+              ? Theme.of(context).colorScheme.error
+              : null,
           duration: const Duration(seconds: 5),
         ),
       );

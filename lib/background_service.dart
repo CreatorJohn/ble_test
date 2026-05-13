@@ -32,7 +32,8 @@ Future<void> initializeBackgroundService() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
 
   await service.configure(
@@ -98,14 +99,6 @@ Future<void> _startServiceLogic(
 ) async {
   await Future.delayed(const Duration(seconds: 1));
 
-  try {
-    log.info('Initializing BLEAdvertiser...');
-    await advertiser.initialize(ignorePermissions: true);
-    log.info('BLEAdvertiser initialized');
-  } catch (e) {
-    log.severe('BLEAdvertiser initialization failed: $e');
-  }
-
   final prefs = await SharedPreferences.getInstance();
   String currentName = prefs.getString('advertising_name_v2') ?? "BLE Test";
   bool advertisingOn = prefs.getBool('advertising_on') ?? false;
@@ -117,7 +110,7 @@ Future<void> _startServiceLogic(
   bool needsTrailingUpdate = false;
 
   Future<void> updateAd() async {
-    if (!advertisingOn) return;
+    if (!advertisingOn || !BLEAdvertiser.initialized) return;
 
     if (isAdUpdating) {
       // Already in cooldown, mark for trailing update
@@ -308,7 +301,8 @@ Future<void> _startServiceLogic(
 
         if (needsMetadataUpdate) {
           final lastAttempt = lastSyncAttempt[stableId];
-          final bool isCooldownActive = lastAttempt != null &&
+          final bool isCooldownActive =
+              lastAttempt != null &&
               DateTime.now().difference(lastAttempt).inMinutes < 5;
 
           if (!activeSyncIds.contains(stableId) && !isCooldownActive) {
@@ -319,10 +313,11 @@ Future<void> _startServiceLogic(
             );
             _fetchFullMetadata(result.device, isarService, stableId, log)
                 .then((_) {
-              activeSyncIds.remove(stableId);
-            }).catchError((e) {
-              activeSyncIds.remove(stableId);
-            });
+                  activeSyncIds.remove(stableId);
+                })
+                .catchError((e) {
+                  activeSyncIds.remove(stableId);
+                });
           }
         }
       } catch (e) {
@@ -431,6 +426,7 @@ Future<void> _startServiceLogic(
 
   service.on('startAdvertising').listen((event) async {
     final name = event?['name'];
+    if (!BLEAdvertiser.initialized) await advertiser.initialize();
     advertisingOn = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('advertising_on', true);
@@ -476,10 +472,7 @@ Future<void> _fetchFullMetadata(
     } catch (_) {}
 
     log.info('Connecting to $stableId to fetch metadata...');
-    await device.connect(
-      autoConnect: false,
-      license: License.free,
-    );
+    await device.connect(autoConnect: false, license: License.free);
     log.info('Connected to $stableId');
 
     // Small delay after connection for stability
@@ -534,8 +527,9 @@ Future<void> _fetchFullMetadata(
     if (hashChar != null) {
       log.info('Reading full hash from $stableId...');
       final hashBytes = await robustRead(hashChar);
-      final hashHex =
-          hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      final hashHex = hashBytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
 
       final existing = await isar.db.foundDevices
           .where()
@@ -554,7 +548,7 @@ Future<void> _fetchFullMetadata(
             (existing.profilePicture == null ||
                 existing.profileHash != hashHex)) {
           log.info('Requesting profile picture sync from $stableId...');
-          // Using withoutResponse: false (reliable write) ensures the ping is 
+          // Using withoutResponse: false (reliable write) ensures the ping is
           // processed before we attempt the next read, preventing GATT_FAILURE 257.
           await picChar.write([0x01], withoutResponse: false);
           // Small stabilization delay for Android BLE stack

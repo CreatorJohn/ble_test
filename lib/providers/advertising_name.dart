@@ -12,11 +12,9 @@ class IsAdvertising extends _$IsAdvertising {
   @override
   bool build() {
     _service.on("advertisingChange").listen((event) {
-      final active = event?["active"];
+      final bool? active = event?["active"];
 
-      if (active is bool) {
-        state = active;
-      }
+      state = active ?? false;
     });
 
     return false;
