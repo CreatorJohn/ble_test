@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math';
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/data/message.dart';
@@ -7,6 +9,7 @@ import 'dart:typed_data';
 import 'package:logging/logging.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:ble_test/data/found_device.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:isar_community/isar.dart';
 
 class MessageHandler {
@@ -16,6 +19,7 @@ class MessageHandler {
 
   static const int typeText = 0x01;
   static const int typeImage = 0x02;
+  static const int typeProfilePic = 0x03;
 
   static void initialize() {
     ChunkedTransferManager.onPayloadComplete.listen((event) async {

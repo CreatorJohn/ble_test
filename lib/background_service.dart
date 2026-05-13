@@ -578,8 +578,3 @@ Future<void> _fetchFullMetadata(
     } catch (_) {}
   }
 }
-ry {
-      await device.disconnect();
-    } catch (_) {}
-  }
-}
