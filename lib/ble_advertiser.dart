@@ -137,45 +137,68 @@ class BLEAdvertiser {
       offset,
       value,
     ) {
-      _log.info('Write request from $deviceId for $characteristicUuid');
-      final charUuidLower = characteristicUuid.toLowerCase();
+      try {
+        final charUuidLower = characteristicUuid.toLowerCase();
+        final valueLen = value?.length ?? 0;
+        _log.info(
+            'Write Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset | Len: $valueLen');
 
-      if (charUuidLower == messageCharUuid.toLowerCase()) {
-        if (value != null) {
+        if (charUuidLower == messageCharUuid.toLowerCase()) {
+          if (value != null) {
+            final isar = IsarService();
+            if (isar.isOpen) {
+              isar.findDeviceByRemoteId(deviceId).then((device) {
+                if (device != null) {
+                  MessageHandler.handleIncomingMessage(
+                    senderStableId: device.stableId,
+                    data: value,
+                  );
+                } else {
+                  _log.warning(
+                      'Message Write Error: Device $deviceId not found in DB');
+                }
+              }).catchError((e) {
+                _log.severe('Error processing Message Write: $e');
+              });
+            } else {
+              _log.warning('Message Write Error: Isar DB is closed');
+            }
+          }
+        } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
+          _log.info('Profile Sync Triggered | Device: $deviceId');
           final isar = IsarService();
           if (isar.isOpen) {
             isar.findDeviceByRemoteId(deviceId).then((device) {
               if (device != null) {
-                MessageHandler.handleIncomingMessage(
-                  senderStableId: device.stableId,
-                  data: value,
-                );
+                ProfileManager.getProfilePicture().then((pic) {
+                  if (pic != null) {
+                    _log.info('Pushing Profile Picture to ${device.stableId}');
+                    MessageHandler.pushProfilePicture(
+                      targetStableId: device.stableId,
+                      targetRemoteId: deviceId,
+                      imageBytes: pic,
+                    );
+                  } else {
+                    _log.warning('Profile Sync Error: Local profile pic is null');
+                  }
+                }).catchError((e) {
+                  _log.severe('Error fetching local profile pic: $e');
+                });
               } else {
-                _log.warning('Received message from unknown MAC: $deviceId');
+                _log.warning(
+                    'Profile Sync Error: Device $deviceId not found in DB');
               }
+            }).catchError((e) {
+              _log.severe('Error processing Profile Sync request: $e');
             });
+          } else {
+            _log.warning('Profile Sync Error: Isar DB is closed');
           }
+        } else {
+          _log.fine('Write request to unknown characteristic: $charUuidLower');
         }
-      } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
-        _log.info('Received profile picture sync request from $deviceId');
-        final isar = IsarService();
-        if (isar.isOpen) {
-          isar.findDeviceByRemoteId(deviceId).then((device) {
-            if (device != null) {
-              ProfileManager.getProfilePicture().then((pic) {
-                if (pic != null) {
-                  MessageHandler.pushProfilePicture(
-                    targetStableId: device.stableId,
-                    targetRemoteId: deviceId,
-                    imageBytes: pic,
-                  );
-                }
-              });
-            } else {
-              _log.warning('Sync request from unknown MAC: $deviceId');
-            }
-          });
-        }
+      } catch (e) {
+        _log.severe('Global error in setWriteRequestCallback: $e');
       }
       return WriteRequestResult();
     });
@@ -186,7 +209,12 @@ class BLEAdvertiser {
       offset,
       value,
     ) {
-      _log.info('Read request from $deviceId for $characteristicUuid');
+      try {
+        _log.info(
+            'Read Request | Device: $deviceId | Char: ${characteristicUuid.toLowerCase()} | Offset: $offset');
+      } catch (e) {
+        _log.severe('Error in setReadRequestCallback logging: $e');
+      }
       return null;
     });
 

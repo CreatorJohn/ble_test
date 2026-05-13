@@ -592,11 +592,3 @@ Future<void> _fetchFullMetadata(
     } catch (_) {}
   }
 }
-
-    log.warning('Failed to fetch full metadata for $stableId: $e');
-  } finally {
-    try {
-      await device.disconnect();
-    } catch (_) {}
-  }
-}
