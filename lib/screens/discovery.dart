@@ -143,14 +143,18 @@ class DiscoveryScreen extends ConsumerWidget {
                             backgroundColor: Theme.of(
                               context,
                             ).colorScheme.primaryContainer,
-                            backgroundImage: item.profilePicture != null
-                                ? MemoryImage(
-                                    Uint8List.fromList(item.profilePicture!),
-                                  )
-                                : null,
-                            child: item.profilePicture == null
-                                ? const Icon(Icons.person)
-                                : null,
+                            backgroundImage:
+                                item.profilePicture != null &&
+                                        item.profilePicture!.isNotEmpty
+                                    ? MemoryImage(
+                                      Uint8List.fromList(item.profilePicture!),
+                                    )
+                                    : null,
+                            child:
+                                (item.profilePicture == null ||
+                                        item.profilePicture!.isEmpty)
+                                    ? const Icon(Icons.person)
+                                    : null,
                           ),
                           title: Row(
                             children: [
@@ -163,12 +167,15 @@ class DiscoveryScreen extends ConsumerWidget {
                                 ),
                               ),
                               if (item.publicKey != null)
-                                const Tooltip(
-                                  message: "End-to-End Encrypted",
-                                  child: Icon(
-                                    Icons.lock,
-                                    size: 14,
-                                    color: Colors.green,
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 4.0),
+                                  child: Tooltip(
+                                    message: "End-to-End Encrypted",
+                                    child: Icon(
+                                      Icons.lock,
+                                      size: 14,
+                                      color: Colors.green,
+                                    ),
                                   ),
                                 ),
                             ],
@@ -176,8 +183,58 @@ class DiscoveryScreen extends ConsumerWidget {
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Row(
+                                children: [
+                                  StreamBuilder<BluetoothConnectionState>(
+                                    stream:
+                                        BluetoothDevice.fromId(
+                                          item.remoteId,
+                                        ).connectionState,
+                                    builder: (context, snapshot) {
+                                      final state =
+                                          snapshot.data ??
+                                          BluetoothConnectionState.disconnected;
+                                      final color =
+                                          state ==
+                                                  BluetoothConnectionState
+                                                      .connected
+                                              ? Colors.green
+                                              : Colors.grey;
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: color.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: color.withValues(alpha: 0.5),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          state.name.toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.bold,
+                                            color: color,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "ID: ${item.stableId}",
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                ],
+                              ),
                               Text(
-                                "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}",
+                                "MAC: ${item.remoteId}",
+                                style: const TextStyle(fontSize: 10),
                               ),
                               if (item.publicKey == null)
                                 Text(
@@ -324,10 +381,17 @@ class DiscoveryScreen extends ConsumerWidget {
       final bleDevice = BluetoothDevice.fromId(device.remoteId);
 
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text("Connecting to ${device.name ?? 'device'}...")),
+        SnackBar(
+          content: Text("Connecting to ${device.name ?? 'device'}..."),
+          duration: const Duration(seconds: 2),
+        ),
       );
 
-      await bleDevice.connect(license: License.free);
+      await bleDevice.connect(
+        timeout: const Duration(seconds: 15),
+        autoConnect: false,
+        license: License.free,
+      );
 
       try {
         final services = await bleDevice.discoverServices();
@@ -355,12 +419,18 @@ class DiscoveryScreen extends ConsumerWidget {
           if (encryptedPayload == null) {
             scaffoldMessenger.showSnackBar(
               const SnackBar(
-                content: Text("Handshake Required: Still fetching encryption keys for this peer. Please wait a moment."),
+                content: Text(
+                  "Handshake Required: Still fetching encryption keys for this peer. Please wait a moment.",
+                ),
                 duration: Duration(seconds: 4),
               ),
             );
             return;
           }
+
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text("Sending message...")),
+          );
 
           final messageId = Random().nextInt(256);
           final chunks = ChunkedTransferManager.generateChunks(
@@ -370,10 +440,8 @@ class DiscoveryScreen extends ConsumerWidget {
 
           int sent = 0;
           for (final chunk in chunks) {
-            // writeWithoutResponse is faster for "blasting" mesh data
             await messageChar.write(chunk, withoutResponse: true);
             sent++;
-            // Small delay to prevent radio congestion
             await Future.delayed(const Duration(milliseconds: 10));
           }
 
@@ -386,15 +454,29 @@ class DiscoveryScreen extends ConsumerWidget {
           );
         } else {
           scaffoldMessenger.showSnackBar(
-            const SnackBar(content: Text("Messaging service not found.")),
+            const SnackBar(
+              content: Text("Error: This device does not support messaging."),
+            ),
           );
         }
       } finally {
         await bleDevice.disconnect();
       }
     } catch (e) {
+      String errorMessage = "Failed to send message: $e";
+      if (e.toString().contains("connection canceled") ||
+          e.toString().contains("10")) {
+        errorMessage = "Connection Rejected: The peer declined the connection request.";
+      } else if (e.toString().contains("Timed out")) {
+        errorMessage = "Connection Timed Out: The peer is out of range or busy.";
+      }
+
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text("Error sending message: $e")),
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: context.mounted ? Theme.of(context).colorScheme.error : null,
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
