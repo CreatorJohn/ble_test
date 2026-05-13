@@ -248,7 +248,7 @@ class BLEAdvertiser {
               uuid: profilePicCharUuid,
               properties: [
                 CharacteristicProperties.read.index,
-                CharacteristicProperties.write.index,
+                CharacteristicProperties.writeWithoutResponse.index,
               ],
               permissions: [
                 AttributePermissions.readable.index,
