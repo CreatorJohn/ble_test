@@ -6,6 +6,7 @@ import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
+import 'package:ble_test/profile_manager.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -178,6 +179,8 @@ Future<void> _startServiceLogic(
     return;
   }
 
+  final myStableId = await ProfileManager.getStableDeviceId();
+
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isarService.isOpen) return;
 
@@ -186,8 +189,10 @@ Future<void> _startServiceLogic(
       final remoteId = result.device.remoteId.toString();
 
       // Manufacturer ID 0xFFFF is used for our custom mesh payload
-      final meshData = advData.manufacturerData[0xFFFF];
-      if (meshData == null || meshData.length < 5) continue;
+      final meshDataRaw = advData.manufacturerData[0xFFFF];
+      if (meshDataRaw == null || meshDataRaw.length < 5) continue;
+
+      final meshData = Uint8List.fromList(meshDataRaw);
 
       int? stableId;
       int? versionTag;
@@ -197,7 +202,7 @@ Future<void> _startServiceLogic(
 
       if (meshData.length == 5) {
         // Main Packet: [ID(4)][Version/Flags(1)]
-        final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
+        final buffer = ByteData.view(meshData.buffer);
         stableId = buffer.getUint32(0, Endian.big);
         versionTag = (meshData[4] >> 2) & 0x3F;
       } else if (meshData.length == 12) {
@@ -216,7 +221,7 @@ Future<void> _startServiceLogic(
             .join();
       } else if (meshData.length >= 17) {
         // Merged: [Main(5)][ScanResponse(12)]
-        final buffer = ByteData.view(Uint8List.fromList(meshData).buffer);
+        final buffer = ByteData.view(meshData.buffer);
         stableId = buffer.getUint32(0, Endian.big);
         versionTag = (meshData[4] >> 2) & 0x3F;
 
@@ -235,7 +240,6 @@ Future<void> _startServiceLogic(
       }
 
       // If we don't have a stableId in this packet, try to find it in the DB by remoteId
-      // This helps when we receive a Scan Response packet alone.
       if (stableId == null) {
         final existingByRemote = await isarService.db.foundDevices
             .where()
@@ -246,37 +250,40 @@ Future<void> _startServiceLogic(
         }
       }
 
-      if (stableId == null) {
-        // We need at least a stableId to proceed
+      if (stableId == null || stableId == myStableId) {
         continue;
       }
 
-      final device = FoundDevice()
-        ..stableId = stableId
-        ..remoteId = remoteId
-        ..name = advData.advName
-        ..rssi = result.rssi
-        ..lastSeen = DateTime.now();
+      FoundDevice device;
+      final existing = await isarService.db.foundDevices
+          .where()
+          .stableIdEqualTo(stableId)
+          .findFirst();
 
+      if (existing != null) {
+        device = existing;
+      } else {
+        device = FoundDevice()..stableId = stableId;
+      }
+
+      // Update volatile fields
+      device.remoteId = remoteId;
+      device.rssi = result.rssi;
+      device.lastSeen = DateTime.now();
+
+      // Only update metadata if present in this packet
+      if (advData.advName.isNotEmpty) {
+        device.name = advData.advName;
+      }
       if (versionTag != null) device.versionTag = versionTag;
       if (profileHash != null) device.profileHash = profileHash;
       if (lat != null) device.latitude = lat;
       if (lon != null) device.longitude = lon;
 
       try {
-        final existing = await isarService.db.foundDevices
-            .where()
-            .stableIdEqualTo(stableId)
-            .findFirst();
-
         bool needsMetadataUpdate = false;
 
         if (existing != null) {
-          device.id = existing.id;
-          device.profilePicture = existing.profilePicture;
-          device.publicKey = existing.publicKey;
-          device.lastPictureSync = existing.lastPictureSync;
-
           bool versionChanged =
               versionTag != null && existing.versionTag != versionTag;
           bool needsForcedSync =
@@ -291,14 +298,15 @@ Future<void> _startServiceLogic(
           needsMetadataUpdate = true;
         }
 
+        // Save the basic device info first
+        await isarService.putFoundDevice(device);
+
         if (needsMetadataUpdate) {
           log.info(
             'Syncing metadata for $stableId (Reason: ${existing == null ? "New" : "Stale/Changed"})',
           );
           _fetchFullMetadata(result.device, isarService, stableId, log);
         }
-
-        await isarService.putFoundDevice(device);
       } catch (e) {
         log.warning('Error processing scan result for $stableId: $e');
       }
@@ -308,8 +316,15 @@ Future<void> _startServiceLogic(
   const scanDuration = Duration(seconds: 20);
   const waitDuration = Duration(seconds: 80);
   DateTime? lastScanStartTime;
+  bool isScanOperationInProgress = false;
 
   Future<void> startSafeScan() async {
+    if (isScanOperationInProgress) {
+      log.info('Scan operation already in progress, skipping trigger.');
+      return;
+    }
+    isScanOperationInProgress = true;
+
     try {
       log.info('Attempting startSafeScan...');
       service.invoke("updateAdvertisingName", {"name": currentName});
@@ -322,14 +337,22 @@ Future<void> _startServiceLogic(
       // Ensure adapter is ON
       var state = await FlutterBluePlus.adapterState.first;
       if (state != BluetoothAdapterState.on) {
-        log.info('Bluetooth state is $state');
+        log.info('Bluetooth state is $state, waiting for ON...');
+        try {
+          state = await FlutterBluePlus.adapterState
+              .where((s) => s == BluetoothAdapterState.on)
+              .first
+              .timeout(const Duration(seconds: 15));
+        } catch (_) {
+          log.warning('Bluetooth did not turn ON in time, skipping scan');
+        }
       }
 
       final isScanning = FlutterBluePlus.isScanningNow;
       if (isScanning) {
         log.info('Scan already in progress, stopping first...');
         await FlutterBluePlus.stopScan();
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(seconds: 1));
       }
 
       log.info('Starting BLE scan (duration: ${scanDuration.inSeconds}s)...');
@@ -345,10 +368,8 @@ Future<void> _startServiceLogic(
     } catch (e) {
       log.severe('startSafeScan failed: $e');
       lastScanStartTime = null;
-
-      // If we got the specific NPE or PlatformException,
-      // it might be because the stack is "stuck".
-      // A small delay before the next cycle might help.
+    } finally {
+      isScanOperationInProgress = false;
     }
   }
 
@@ -432,12 +453,20 @@ Future<void> _fetchFullMetadata(
   try {
     log.info('Connecting to $stableId to fetch metadata...');
     await device.connect(
-      timeout: const Duration(seconds: 8),
+      timeout: const Duration(seconds: 15),
+      autoConnect: false,
       license: License.free,
     );
     log.info('Connected to $stableId');
 
+    // Small delay after connection for stability
+    await Future.delayed(const Duration(milliseconds: 500));
+
     final services = await device.discoverServices();
+
+    // Another delay after service discovery
+    await Future.delayed(const Duration(milliseconds: 500));
+
     BluetoothCharacteristic? picChar;
     BluetoothCharacteristic? hashChar;
     BluetoothCharacteristic? locChar;
@@ -464,9 +493,24 @@ Future<void> _fetchFullMetadata(
       }
     }
 
+    Future<List<int>> robustRead(BluetoothCharacteristic char) async {
+      int attempts = 0;
+      while (attempts < 3) {
+        try {
+          return await char.read().timeout(const Duration(seconds: 5));
+        } catch (e) {
+          attempts++;
+          if (attempts >= 3) rethrow;
+          log.warning('Read failed, retrying (${attempts}/3)... $e');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      }
+      return [];
+    }
+
     if (hashChar != null) {
       log.info('Reading full hash from $stableId...');
-      final hashBytes = await hashChar.read();
+      final hashBytes = await robustRead(hashChar);
       final hashHex = hashBytes
           .map((b) => b.toRadixString(16).padLeft(2, '0'))
           .join();
@@ -481,28 +525,45 @@ Future<void> _fetchFullMetadata(
 
         if (keyChar != null) {
           log.info('Syncing public key for $stableId...');
-          existing.publicKey = await keyChar.read();
+          existing.publicKey = await robustRead(keyChar);
         }
 
         if (picChar != null &&
             (existing.profilePicture == null ||
                 existing.profileHash != hashHex)) {
           log.info('Downloading profile picture for $stableId...');
-          existing.profilePicture = await picChar.read();
+          existing.profilePicture = await robustRead(picChar);
         }
 
         if (locChar != null) {
-          await locChar.read();
+          await robustRead(locChar);
         }
 
         existing.lastPictureSync = DateTime.now();
-        await isar.putFoundDevice(existing);
+
+        // Re-fetch to avoid overwriting volatile fields (RSSI, lastSeen) updated by scan
+        final latest = await isar.db.foundDevices
+            .where()
+            .stableIdEqualTo(stableId)
+            .findFirst();
+
+        if (latest != null) {
+          latest.profileHash = existing.profileHash;
+          latest.publicKey = existing.publicKey;
+          latest.profilePicture = existing.profilePicture;
+          latest.lastPictureSync = existing.lastPictureSync;
+          await isar.putFoundDevice(latest);
+        } else {
+          await isar.putFoundDevice(existing);
+        }
         log.info('Metadata sync complete for $stableId');
       }
     }
   } catch (e) {
     log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
-    await device.disconnect();
+    try {
+      await device.disconnect();
+    } catch (_) {}
   }
 }

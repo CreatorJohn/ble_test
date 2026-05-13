@@ -32,7 +32,6 @@ class BLEAdvertiser {
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
-  static bool _isHardwareUnsupported = false;
 
   factory BLEAdvertiser() => _instance;
 
@@ -42,28 +41,32 @@ class BLEAdvertiser {
     _log.info("Checking the bluetooth...");
 
     BluetoothAdapterState state = FlutterBluePlus.adapterStateNow;
-    _log.info("Current Bluetooth State: $state");
+    _log.info("Initial Bluetooth State: $state");
 
     if (state == BluetoothAdapterState.on) {
       _log.fine("Bluetooth is already ON");
       return true;
     }
 
-    if (state == BluetoothAdapterState.off ||
-        state == BluetoothAdapterState.turningOff) {
-      _log.info("Bluetooth reported as $state, attempting to wait for ON...");
+    if (state == BluetoothAdapterState.unknown) {
+      _log.info("Bluetooth state unknown, waiting for warm-up...");
+      await Future.delayed(const Duration(seconds: 3));
+      state = FlutterBluePlus.adapterStateNow;
+      if (state == BluetoothAdapterState.on) return true;
     }
 
+    _log.info("Waiting for Bluetooth to reach ON state...");
     try {
-      await FlutterBluePlus.adapterState
+      final newState = await FlutterBluePlus.adapterState
           .where((s) => s == BluetoothAdapterState.on)
           .first
-          .timeout(const Duration(seconds: 5));
-      _log.fine("Bluetooth is now ON");
+          .timeout(const Duration(seconds: 15));
+      _log.info("Bluetooth state reached: $newState");
       return true;
     } catch (_) {
+      final finalState = FlutterBluePlus.adapterStateNow;
       _log.warning(
-        "Bluetooth remains in state: ${FlutterBluePlus.adapterStateNow}. Continuing anyway for Chromebook reliability.",
+        "Bluetooth remains in state: $finalState after timeout. Continuing anyway for stack resilience.",
       );
       return true;
     }
@@ -84,13 +87,29 @@ class BLEAdvertiser {
       ].request();
     }
 
+    if (Platform.isAndroid || Platform.isIOS) {
+      await _waitForBluetooth();
+      // Give the system a moment to settle after Bluetooth turns ON
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
     try {
       if (Platform.isAndroid ||
           Platform.isIOS ||
           Platform.isMacOS ||
           Platform.isWindows) {
         _log.info('Calling BlePeripheral.initialize()...');
-        await BlePeripheral.initialize();
+        try {
+          await BlePeripheral.initialize();
+        } catch (e) {
+          if (e.toString().contains('gattServer is null')) {
+            _log.warning('GATT server null, retrying initialize in 3s...');
+            await Future.delayed(const Duration(seconds: 3));
+            await BlePeripheral.initialize();
+          } else {
+            rethrow;
+          }
+        }
       }
     } catch (e) {
       _log.warning(
@@ -98,14 +117,12 @@ class BLEAdvertiser {
       );
     }
 
-    if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
-      await _waitForBluetooth();
-    }
-
     _log.fine('Setting up BLE callbacks');
 
     BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
-      _log.info('Advertising status update from plugin: isAdvertising=$isAdvertising, error=$error');
+      _log.info(
+        'Advertising status update from plugin: isAdvertising=$isAdvertising, error=$error',
+      );
       _isAdvertising = isAdvertising;
       _advertisingStatusController.add(isAdvertising);
 
@@ -165,8 +182,6 @@ class BLEAdvertiser {
     double longitude = 0.0,
     bool isOnline = false,
   }) async {
-    if (_isHardwareUnsupported) return;
-
     try {
       if (_initialized == false) {
         bool success = await initialize();
@@ -175,7 +190,6 @@ class BLEAdvertiser {
 
       if (Platform.isAndroid && !await BlePeripheral.isSupported()) {
         _log.warning('Hardware does not support Peripheral Mode (Advertising)');
-        _isHardwareUnsupported = true;
         return;
       }
 
@@ -245,11 +259,12 @@ class BLEAdvertiser {
         isOnline: isOnline,
       );
 
-      final scanResponsePayload = MeshPacketEncoder.encodeScanResponseManufacturerData(
-        latitude: latitude,
-        longitude: longitude,
-        profileHash: fullHash,
-      );
+      final scanResponsePayload =
+          MeshPacketEncoder.encodeScanResponseManufacturerData(
+            latitude: latitude,
+            longitude: longitude,
+            profileHash: fullHash,
+          );
 
       _log.info('Starting BLE advertising...');
       await BlePeripheral.startAdvertising(
@@ -269,9 +284,8 @@ class BLEAdvertiser {
       if (e.toString().contains("UnsupportedOperationException") ||
           e.toString().contains("Advertising not supported")) {
         _log.warning(
-          'Detected unsupported advertising hardware. Silencing future attempts.',
+          'Detected unsupported advertising hardware.',
         );
-        _isHardwareUnsupported = true;
       } else {
         _log.severe('Failed to start advertising: $e');
       }
