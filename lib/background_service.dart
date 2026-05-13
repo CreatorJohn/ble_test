@@ -544,8 +544,11 @@ Future<void> _fetchFullMetadata(
             (existing.profilePicture == null ||
                 existing.profileHash != hashHex)) {
           log.info('Requesting profile picture sync from $stableId...');
-          // Instead of reading, we write a "ping" (0x01) to trigger a push
-          await picChar.write([0x01], withoutResponse: true);
+          // Using withoutResponse: false (reliable write) ensures the ping is 
+          // processed before we attempt the next read, preventing GATT_FAILURE 257.
+          await picChar.write([0x01], withoutResponse: false);
+          // Small stabilization delay for Android BLE stack
+          await Future.delayed(const Duration(milliseconds: 200));
         }
 
         if (locChar != null) {
