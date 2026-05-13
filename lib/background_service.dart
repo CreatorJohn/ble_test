@@ -562,7 +562,6 @@ Future<void> _fetchFullMetadata(
         if (latest != null) {
           latest.profileHash = existing.profileHash;
           latest.publicKey = existing.publicKey;
-          latest.profilePicture = existing.profilePicture;
           latest.lastPictureSync = existing.lastPictureSync;
           await isar.putFoundDevice(latest);
         } else {
@@ -575,6 +574,11 @@ Future<void> _fetchFullMetadata(
     log.warning('Failed to fetch full metadata for $stableId: $e');
   } finally {
     try {
+      await device.disconnect();
+    } catch (_) {}
+  }
+}
+ry {
       await device.disconnect();
     } catch (_) {}
   }
