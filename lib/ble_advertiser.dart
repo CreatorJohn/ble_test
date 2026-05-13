@@ -137,32 +137,40 @@ class BLEAdvertiser {
       offset,
       value,
     ) {
-      try {
-        final charUuidLower = characteristicUuid.toLowerCase();
-        final valueLen = value?.length ?? 0;
-        _log.info(
-            'Write Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset | Len: $valueLen');
+      final charUuidLower = characteristicUuid.toLowerCase();
+      final valueLen = value?.length ?? 0;
+      final hexValue = value != null
+          ? value.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')
+          : 'null';
 
+      _log.info(
+          'Write Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset | Len: $valueLen | Data: [$hexValue]');
+
+      try {
         if (charUuidLower == messageCharUuid.toLowerCase()) {
           if (value != null) {
             final isar = IsarService();
             if (isar.isOpen) {
               isar.findDeviceByRemoteId(deviceId).then((device) {
                 if (device != null) {
+                  _log.info(
+                      'Processing Message from ${device.stableId} (Remote: $deviceId)');
                   MessageHandler.handleIncomingMessage(
                     senderStableId: device.stableId,
                     data: value,
                   );
                 } else {
                   _log.warning(
-                      'Message Write Error: Device $deviceId not found in DB');
+                      'Message Write Error: Device $deviceId not found in DB. Cannot map to stableId.');
                 }
               }).catchError((e) {
-                _log.severe('Error processing Message Write: $e');
+                _log.severe('Error in findDeviceByRemoteId for Message: $e');
               });
             } else {
               _log.warning('Message Write Error: Isar DB is closed');
             }
+          } else {
+            _log.warning('Message Write Warning: Received null value');
           }
         } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
           _log.info('Profile Sync Triggered | Device: $deviceId');
@@ -172,14 +180,16 @@ class BLEAdvertiser {
               if (device != null) {
                 ProfileManager.getProfilePicture().then((pic) {
                   if (pic != null) {
-                    _log.info('Pushing Profile Picture to ${device.stableId}');
+                    _log.info(
+                        'Pushing Profile Picture to ${device.stableId} (Remote: $deviceId)');
                     MessageHandler.pushProfilePicture(
                       targetStableId: device.stableId,
                       targetRemoteId: deviceId,
                       imageBytes: pic,
                     );
                   } else {
-                    _log.warning('Profile Sync Error: Local profile pic is null');
+                    _log.warning(
+                        'Profile Sync Error: Local profile pic not found');
                   }
                 }).catchError((e) {
                   _log.severe('Error fetching local profile pic: $e');
@@ -189,7 +199,7 @@ class BLEAdvertiser {
                     'Profile Sync Error: Device $deviceId not found in DB');
               }
             }).catchError((e) {
-              _log.severe('Error processing Profile Sync request: $e');
+              _log.severe('Error in findDeviceByRemoteId for Profile: $e');
             });
           } else {
             _log.warning('Profile Sync Error: Isar DB is closed');
@@ -199,8 +209,9 @@ class BLEAdvertiser {
         }
       } catch (e) {
         _log.severe('Global error in setWriteRequestCallback: $e');
+        return WriteRequestResult(status: 1); // 1 = General Failure
       }
-      return WriteRequestResult();
+      return WriteRequestResult(status: 0); // 0 = Success
     });
 
     BlePeripheral.setReadRequestCallback((
@@ -215,7 +226,7 @@ class BLEAdvertiser {
       } catch (e) {
         _log.severe('Error in setReadRequestCallback logging: $e');
       }
-      return null;
+      return null; // Return null to use the characteristic's current value
     });
 
     return true;
