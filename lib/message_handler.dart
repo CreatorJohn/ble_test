@@ -178,4 +178,75 @@ class MessageHandler {
       Uint8List.fromList(device.publicKey!),
     );
   }
+
+  static Future<void> pushProfilePicture({
+    required int targetStableId,
+    required String targetRemoteId,
+    required Uint8List imageBytes,
+  }) async {
+    final device = BluetoothDevice.fromId(targetRemoteId);
+    try {
+      _log.info('Connecting to $targetStableId to push profile picture...');
+      await device.connect(
+        timeout: const Duration(seconds: 15),
+        autoConnect: false,
+        license: License.free,
+      );
+
+      final services = await device.discoverServices();
+      BluetoothCharacteristic? messageChar;
+      for (final s in services) {
+        if (s.uuid.toString().toLowerCase() ==
+            BLEAdvertiser.serviceUuid.toLowerCase()) {
+          for (final c in s.characteristics) {
+            if (c.uuid.toString().toLowerCase() ==
+                BLEAdvertiser.messageCharUuid.toLowerCase()) {
+              messageChar = c;
+              break;
+            }
+          }
+        }
+      }
+
+      if (messageChar != null) {
+        final payload = Uint8List(1 + imageBytes.length);
+        payload[0] = typeProfilePic;
+        payload.setRange(1, payload.length, imageBytes);
+
+        final isar = IsarService();
+        final foundDevice = await isar.db.foundDevices
+            .where()
+            .stableIdEqualTo(targetStableId)
+            .findFirst();
+
+        if (foundDevice == null || foundDevice.publicKey == null) {
+          _log.warning('Cannot push: Public key missing for $targetStableId');
+          return;
+        }
+
+        final encrypted = await _encryptMessage(
+          payload,
+          Uint8List.fromList(foundDevice.publicKey!),
+        );
+
+        final messageId = Random().nextInt(256);
+        final chunks = ChunkedTransferManager.generateChunks(
+          encrypted,
+          messageId,
+        );
+
+        for (final chunk in chunks) {
+          await messageChar.write(chunk, withoutResponse: true);
+          await Future.delayed(const Duration(milliseconds: 10));
+        }
+        _log.info('Profile picture pushed to $targetStableId');
+      }
+    } catch (e) {
+      _log.severe('Failed to push profile picture: $e');
+    } finally {
+      try {
+        await device.disconnect();
+      } catch (_) {}
+    }
+  }
 }
