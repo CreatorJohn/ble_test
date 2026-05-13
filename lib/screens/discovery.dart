@@ -152,64 +152,43 @@ class DiscoveryScreen extends ConsumerWidget {
                                 ? const Icon(Icons.person)
                                 : null,
                           ),
-                          title: Column(
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.name ?? "Unknown",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (item.publicKey != null)
+                                const Tooltip(
+                                  message: "End-to-End Encrypted",
+                                  child: Icon(
+                                    Icons.lock,
+                                    size: 14,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                item.name ?? "Unknown",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                                "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}",
+                              ),
+                              if (item.publicKey == null)
+                                Text(
+                                  "Security: Pending Handshake...",
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontStyle: FontStyle.italic,
+                                  ),
                                 ),
-                              ),
-                              Row(
-                                children: [
-                                  StreamBuilder<BluetoothConnectionState>(
-                                    stream: BluetoothDevice.fromId(
-                                      item.remoteId,
-                                    ).connectionState,
-                                    builder: (context, snapshot) {
-                                      final state =
-                                          snapshot.data ??
-                                          BluetoothConnectionState.disconnected;
-                                      if (state ==
-                                          BluetoothConnectionState.connected) {
-                                        return const Padding(
-                                          padding: EdgeInsets.only(right: 4.0),
-                                          child: Badge(
-                                            label: Text("CONNECTED"),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      }
-                                      return const SizedBox.shrink();
-                                    },
-                                  ),
-                                  StreamBuilder<BluetoothBondState>(
-                                    stream: BluetoothDevice.fromId(
-                                      item.remoteId,
-                                    ).bondState,
-                                    builder: (context, snapshot) {
-                                      final state =
-                                          snapshot.data ??
-                                          BluetoothBondState.none;
-                                      if (state == BluetoothBondState.bonded) {
-                                        return const Padding(
-                                          padding: EdgeInsets.only(right: 4.0),
-                                          child: Badge(
-                                            label: Text("BONDED"),
-                                            backgroundColor: Colors.blue,
-                                          ),
-                                        );
-                                      }
-                                      return const SizedBox.shrink();
-                                    },
-                                  ),
-                                ],
-                              ),
                             ],
-                          ),
-                          subtitle: Text(
-                            "Stable ID: ${item.stableId}\nMAC: ${item.remoteId}",
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -376,7 +355,8 @@ class DiscoveryScreen extends ConsumerWidget {
           if (encryptedPayload == null) {
             scaffoldMessenger.showSnackBar(
               const SnackBar(
-                content: Text("Encryption failed: Public key missing."),
+                content: Text("Handshake Required: Still fetching encryption keys for this peer. Please wait a moment."),
+                duration: Duration(seconds: 4),
               ),
             );
             return;

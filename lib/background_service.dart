@@ -6,6 +6,7 @@ import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
+import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/profile_manager.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -178,6 +179,9 @@ Future<void> _startServiceLogic(
     log.severe('IsarService initialization failed: $e');
     return;
   }
+
+  // Ensure MessageHandler is listening to ChunkedTransferManager in background isolate
+  MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
 
