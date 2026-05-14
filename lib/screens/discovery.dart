@@ -210,6 +210,25 @@ class DiscoveryScreen extends ConsumerWidget {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (item.publicKey == null ||
+                                  item.lastPictureSync == null ||
+                                  DateTime.now()
+                                          .difference(item.lastPictureSync!)
+                                          .inHours >=
+                                      24)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8.0),
+                                  child: Tooltip(
+                                    message: "Metadata sync pending",
+                                    child: Icon(
+                                      Icons.sync_problem,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .secondary,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
                               Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
