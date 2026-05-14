@@ -545,6 +545,12 @@ Future<void> _fetchFullMetadata(
           .findFirst();
 
       if (existing != null) {
+        log.info('Comparing hashes for $stableId: Local=${existing.profileHash}, Remote=$hashHex');
+        log.info('Local picture status for $stableId: ${existing.profilePicture == null ? "MISSING" : "Present (${existing.profilePicture!.length} bytes)"}');
+
+        bool hashMismatched = existing.profileHash != hashHex;
+        bool pictureMissing = existing.profilePicture == null;
+
         existing.profileHash = hashHex;
 
         if (keyChar != null) {
@@ -552,15 +558,17 @@ Future<void> _fetchFullMetadata(
           existing.publicKey = await robustRead(keyChar);
         }
 
-        if (picChar != null &&
-            (existing.profilePicture == null ||
-                existing.profileHash != hashHex)) {
-          log.info('Requesting profile picture sync from $stableId...');
+        if (picChar != null && (pictureMissing || hashMismatched)) {
+          log.info('CONDITION MET: Requesting profile picture sync from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)');
           // Using withoutResponse: false (reliable write) ensures the ping is
           // processed before we attempt the next read, preventing GATT_FAILURE 257.
           await picChar.write([0x01], withoutResponse: false);
           // Small stabilization delay for Android BLE stack
           await Future.delayed(const Duration(milliseconds: 200));
+        } else if (picChar == null) {
+          log.warning('Profile picture characteristic NOT FOUND for $stableId');
+        } else {
+          log.info('Sync not needed for $stableId: Hash matches and picture exists');
         }
 
         if (locChar != null) {
@@ -576,14 +584,18 @@ Future<void> _fetchFullMetadata(
             .findFirst();
 
         if (latest != null) {
+          log.info('Updating Isar with synced metadata for $stableId');
           latest.profileHash = existing.profileHash;
           latest.publicKey = existing.publicKey;
           latest.lastPictureSync = existing.lastPictureSync;
           await isar.putFoundDevice(latest);
         } else {
+          log.warning('Device $stableId vanished during sync, saving current state');
           await isar.putFoundDevice(existing);
         }
         log.info('Metadata sync complete for $stableId');
+      } else {
+        log.warning('Device $stableId not found in Isar, skipping metadata sync');
       }
     }
   } catch (e) {

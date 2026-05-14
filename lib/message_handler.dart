@@ -126,16 +126,20 @@ class MessageHandler {
         final payload = payloadToProcess.sublist(1);
 
         if (innerType == typeProfilePic) {
+          _log.info('Received profile picture payload (${payload.length} bytes) from $originSenderId');
           final isar = IsarService();
           final device = await isar.db.foundDevices
               .where()
               .stableIdEqualTo(originSenderId)
               .findFirst();
           if (device != null) {
+            _log.info('Updating Isar record for device $originSenderId with new profile picture');
             device.profilePicture = payload;
             device.lastPictureSync = DateTime.now();
             await isar.putFoundDevice(device);
-            _log.info('Updated profile picture for $originSenderId');
+            _log.info('Isar record updated successfully for $originSenderId');
+          } else {
+            _log.warning('Received profile picture for unknown device $originSenderId');
           }
           return;
         }

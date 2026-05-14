@@ -11,21 +11,24 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 
 class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
   static const String _deviceIdKey = 'stable_device_id_4';
-  static const String _imageFileName = 'profile_pic.png';
+  static const String _imageFileName = 'profile_pic.jpg';
   static const String _privateKeyKey = 'secure_private_key_v1';
   static const String _publicKeyKey = 'public_key_v1';
 
   static const _secureStorage = FlutterSecureStorage();
+  static final _log = Logger('ProfileManager');
 
   static Future<void> pickAndSaveProfilePicture() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image == null) return;
+    _log.info('Picked image: ${image.path}');
 
     final croppedFile = await ImageCropper().cropImage(
       sourcePath: image.path,
@@ -45,13 +48,21 @@ class ProfileManager {
       ],
     );
 
-    if (croppedFile == null) return;
+    if (croppedFile == null) {
+      _log.info('Image cropping cancelled');
+      return;
+    }
 
     final bytes = await croppedFile.readAsBytes();
+    _log.info('Original cropped size: ${bytes.length} bytes');
+
     final jpgBytes = await compute(_processImage, bytes);
 
     if (jpgBytes != null) {
+      _log.info('Processed JPG size: ${jpgBytes.length} bytes');
       await saveProfilePicture(jpgBytes);
+    } else {
+      _log.severe('Failed to process image');
     }
   }
 
@@ -142,6 +153,8 @@ class ProfileManager {
         .map((b) => b.toRadixString(16).padLeft(2, '0'))
         .join();
 
+    _log.info('Saved profile picture: ${file.path} (Hash: $hashHex)');
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_hashKey, hashHex);
   }
@@ -150,8 +163,11 @@ class ProfileManager {
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$_imageFileName');
     if (await file.exists()) {
-      return await file.readAsBytes();
+      final bytes = await file.readAsBytes();
+      _log.info('Loaded profile picture: ${file.path} (${bytes.length} bytes)');
+      return bytes;
     }
+    _log.info('No profile picture file found at ${file.path}');
     return null;
   }
 }
