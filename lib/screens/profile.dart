@@ -131,7 +131,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 24),
             Row(
-              spacing: 16,
+              spacing: 8,
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
