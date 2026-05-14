@@ -373,6 +373,9 @@ Future<void> _startServiceLogic(
         androidScanMode: AndroidScanMode.lowPower,
         oneByOne: true, // More reliable for background/low-memory
       );
+      
+      // Wait for scan to actually stop (Future completes when timeout hits)
+      await FlutterBluePlus.isScanning.where((s) => s == false).first;
       log.info('BLE scan complete.');
 
       if (syncQueue.isNotEmpty) {
