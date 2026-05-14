@@ -6,7 +6,9 @@ part 'message.g.dart';
 class Message {
   Id id = Isar.autoIncrement;
 
+  @Index()
   late int senderStableId;
+  @Index()
   late int receiverStableId;
   late String content;
   late DateTime timestamp;

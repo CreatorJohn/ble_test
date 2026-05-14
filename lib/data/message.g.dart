@@ -58,6 +58,32 @@ const MessageSchema = CollectionSchema(
   deserializeProp: _messageDeserializeProp,
   idName: r'id',
   indexes: {
+    r'senderStableId': IndexSchema(
+      id: -8952637749671825094,
+      name: r'senderStableId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'senderStableId',
+          type: IndexType.value,
+          caseSensitive: false,
+        ),
+      ],
+    ),
+    r'receiverStableId': IndexSchema(
+      id: -5582182660635979959,
+      name: r'receiverStableId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'receiverStableId',
+          type: IndexType.value,
+          caseSensitive: false,
+        ),
+      ],
+    ),
     r'messageId': IndexSchema(
       id: -635287409172016016,
       name: r'messageId',
@@ -183,6 +209,22 @@ extension MessageQueryWhereSort on QueryBuilder<Message, Message, QWhere> {
     });
   }
 
+  QueryBuilder<Message, Message, QAfterWhere> anySenderStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'senderStableId'),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhere> anyReceiverStableId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'receiverStableId'),
+      );
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterWhere> anyMessageId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -255,6 +297,222 @@ extension MessageQueryWhere on QueryBuilder<Message, Message, QWhereClause> {
           lower: lowerId,
           includeLower: includeLower,
           upper: upperId,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> senderStableIdEqualTo(
+    int senderStableId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(
+          indexName: r'senderStableId',
+          value: [senderStableId],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> senderStableIdNotEqualTo(
+    int senderStableId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'senderStableId',
+                lower: [],
+                upper: [senderStableId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'senderStableId',
+                lower: [senderStableId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'senderStableId',
+                lower: [senderStableId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'senderStableId',
+                lower: [],
+                upper: [senderStableId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> senderStableIdGreaterThan(
+    int senderStableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'senderStableId',
+          lower: [senderStableId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> senderStableIdLessThan(
+    int senderStableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'senderStableId',
+          lower: [],
+          upper: [senderStableId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> senderStableIdBetween(
+    int lowerSenderStableId,
+    int upperSenderStableId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'senderStableId',
+          lower: [lowerSenderStableId],
+          includeLower: includeLower,
+          upper: [upperSenderStableId],
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> receiverStableIdEqualTo(
+    int receiverStableId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(
+          indexName: r'receiverStableId',
+          value: [receiverStableId],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> receiverStableIdNotEqualTo(
+    int receiverStableId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiverStableId',
+                lower: [],
+                upper: [receiverStableId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiverStableId',
+                lower: [receiverStableId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiverStableId',
+                lower: [receiverStableId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiverStableId',
+                lower: [],
+                upper: [receiverStableId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> receiverStableIdGreaterThan(
+    int receiverStableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiverStableId',
+          lower: [receiverStableId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> receiverStableIdLessThan(
+    int receiverStableId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiverStableId',
+          lower: [],
+          upper: [receiverStableId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterWhereClause> receiverStableIdBetween(
+    int lowerReceiverStableId,
+    int upperReceiverStableId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiverStableId',
+          lower: [lowerReceiverStableId],
+          includeLower: includeLower,
+          upper: [upperReceiverStableId],
           includeUpper: includeUpper,
         ),
       );
