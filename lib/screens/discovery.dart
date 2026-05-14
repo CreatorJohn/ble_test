@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:intl/intl.dart';
 
 class DiscoveryScreen extends ConsumerWidget {
   const DiscoveryScreen({super.key});
@@ -280,7 +281,8 @@ class DiscoveryScreen extends ConsumerWidget {
             _ProfileInfo(label: "MAC Address", value: device.remoteId),
             _ProfileInfo(
               label: "Last Seen",
-              value: device.lastSeen.toLocal().toString(),
+              value: DateFormat('dd.MM.yyyy HH:mm:ss')
+                  .format(device.lastSeen.toLocal()),
             ),
             if (device.profileHash != null)
               _ProfileInfo(label: "Profile Hash", value: device.profileHash!),
