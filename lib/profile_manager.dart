@@ -8,15 +8,15 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
   static const String _deviceIdKey = 'stable_device_id_4';
-  static const String _imageFileName = 'profile_pic.jpg';
+  static const String _imageFileName = 'profile_pic.webp';
   static const String _privateKeyKey = 'secure_private_key_v1';
   static const String _publicKeyKey = 'public_key_v1';
 
@@ -56,29 +56,22 @@ class ProfileManager {
     final bytes = await croppedFile.readAsBytes();
     _log.info('Original cropped size: ${bytes.length} bytes');
 
-    final jpgBytes = await compute(_processImage, bytes);
+    // Compress and resize to 128x128 WebP using native library
+    try {
+      _log.info('Compressing to 128x128 WebP...');
+      final webpBytes = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: 128,
+        minHeight: 128,
+        quality: 75,
+        format: CompressFormat.webp,
+      );
 
-    if (jpgBytes != null) {
-      _log.info('Processed JPG size: ${jpgBytes.length} bytes');
-      await saveProfilePicture(jpgBytes);
-    } else {
-      _log.severe('Failed to process image');
+      _log.info('Processed WebP size: ${webpBytes.length} bytes');
+      await saveProfilePicture(Uint8List.fromList(webpBytes));
+    } catch (e) {
+      _log.severe('Failed to compress image: $e');
     }
-  }
-
-  static Uint8List? _processImage(Uint8List bytes) {
-    final decodedImage = img.decodeImage(bytes);
-    if (decodedImage == null) return null;
-
-    // Resize to 128x128 for BLE efficiency
-    final img.Image resized = img.copyResize(
-      decodedImage,
-      width: 128,
-      height: 128,
-      interpolation: img.Interpolation.linear,
-    );
-
-    return Uint8List.fromList(img.encodeJpg(resized, quality: 70));
   }
 
   static Future<int> getStableDeviceId() async {
