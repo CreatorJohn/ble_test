@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -86,6 +87,14 @@ void onStart(ServiceInstance service) async {
   });
 
   log.info('Service isolate started');
+
+  // Initialize BLE stack immediately so we can receive inbound connections
+  // even before we start advertising.
+  advertiser.initialize(ignorePermissions: true).then((_) {
+    log.info('BLEAdvertiser initialized in background isolate');
+  }).catchError((e) {
+    log.warning('BLEAdvertiser early initialization failed: $e');
+  });
 
   // Catch unhandled errors in the background isolate
   runZonedGuarded(
@@ -364,6 +373,22 @@ Future<void> _startServiceLogic(
         return;
       }
 
+      // Add "Placeholder" or metadata-missing devices to sync queue before scanning
+      // This helps with non-advertising devices (Chromebooks) we've met via inbound connect
+      final needsSync = await isarService.db.foundDevices
+          .filter()
+          .publicKeyIsNull()
+          .or()
+          .nameEqualTo("Connecting Device...")
+          .findAll();
+      
+      for (final dev in needsSync) {
+        if (!syncQueue.containsKey(dev.stableId)) {
+          log.info('Adding placeholder ${dev.stableId} (${dev.remoteId}) to sync queue');
+          syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
+        }
+      }
+
       // Ensure adapter is ON
       var state = await FlutterBluePlus.adapterState.first;
       if (state != BluetoothAdapterState.on) {
@@ -475,9 +500,6 @@ Future<void> _startServiceLogic(
 
   service.on('startAdvertising').listen((event) async {
     final name = event?['name'];
-    if (!BLEAdvertiser.initialized) {
-      await advertiser.initialize(ignorePermissions: true);
-    }
     advertisingOn = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('advertising_on', true);
@@ -550,6 +572,7 @@ Future<void> _fetchFullMetadata(
     BluetoothCharacteristic? hashChar;
     BluetoothCharacteristic? locChar;
     BluetoothCharacteristic? keyChar;
+    BluetoothCharacteristic? nameChar;
 
     for (final s in services) {
       if (s.uuid.toString().toLowerCase() ==
@@ -567,6 +590,9 @@ Future<void> _fetchFullMetadata(
           }
           if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
             keyChar = c;
+          }
+          if (charId == BLEAdvertiser.nameCharUuid.toLowerCase()) {
+            nameChar = c;
           }
         }
       }
@@ -607,6 +633,16 @@ Future<void> _fetchFullMetadata(
         bool pictureMissing = existing.profilePicture == null;
 
         existing.profileHash = hashHex;
+
+        if (nameChar != null &&
+            (existing.name == null ||
+                existing.name == "Connecting Device...")) {
+          log.info('Syncing name for $stableId...');
+          final nameBytes = await robustRead(nameChar);
+          if (nameBytes.isNotEmpty) {
+            existing.name = utf8.decode(nameBytes, allowMalformed: true);
+          }
+        }
 
         if (keyChar != null) {
           log.info('Syncing public key for $stableId...');
@@ -674,7 +710,20 @@ Future<void> _fetchFullMetadata(
         }
 
         if (locChar != null) {
-          await robustRead(locChar);
+          log.info('Syncing location for $stableId...');
+          final locBytes = await robustRead(locChar);
+          if (locBytes.length == 6) {
+             final decodedLat = MeshPacketEncoder.decodeCoordinate(
+                (locBytes[0] << 16) | (locBytes[1] << 8) | locBytes[2],
+                true,
+              );
+              final decodedLon = MeshPacketEncoder.decodeCoordinate(
+                (locBytes[3] << 16) | (locBytes[4] << 8) | locBytes[5],
+                false,
+              );
+              existing.latitude = decodedLat;
+              existing.longitude = decodedLon;
+          }
         }
 
         existing.lastPictureSync = DateTime.now();

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';
@@ -24,6 +26,7 @@ class BLEAdvertiser {
   static const fullHashCharUuid = 'a1b2c3d4-e5f6-4321-8765-abcdef123456';
   static const locationCharUuid = 'f1e2d3c4-b5a6-4321-8765-abcdef123456';
   static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
+  static const nameCharUuid = 'c3c4c5c6-d7d8-4321-8765-abcdefabcdef';
 
   /// Maximum length for the display name in the scan response.
   /// Calculated as: 31 (Total) - 16 (Mfg Data + Header) - 2 (Name Header) = 13
@@ -175,28 +178,40 @@ class BLEAdvertiser {
 
             final isar = IsarService();
             if (isar.isOpen) {
-              isar
-                  .findDeviceByRemoteId(deviceId)
-                  .then((device) {
-                    if (device != null) {
-                      _log.info(
-                        'Processing Message from ${device.stableId} (Remote: $deviceId)',
-                      );
-                      MessageHandler.handleIncomingMessage(
-                        senderStableId: device.stableId,
-                        data: value,
-                      );
-                    } else {
-                      _log.warning(
-                        'Message Write Error: Device $deviceId not found in DB. Cannot map to stableId.',
-                      );
-                    }
-                  })
-                  .catchError((e) {
-                    _log.severe(
-                      'Error in findDeviceByRemoteId for Message: $e',
-                    );
-                  });
+              isar.findDeviceByRemoteId(deviceId).then((device) async {
+                if (device != null) {
+                  _log.info(
+                    'Processing Message from ${device.stableId} (Remote: $deviceId)',
+                  );
+                  MessageHandler.handleIncomingMessage(
+                    senderStableId: device.stableId,
+                    data: value,
+                  );
+                } else {
+                  // Unknown device connected (likely non-advertising like a Chromebook)
+                  // Create a placeholder record so we can at least receive and reassemble chunks.
+                  // We'll use a temporary stableId based on the MAC hash until it identifies itself.
+                  final tempId = deviceId.hashCode.abs();
+                  _log.info(
+                    'Unknown device $deviceId connected. Creating placeholder ID: $tempId',
+                  );
+
+                  final placeholder = FoundDevice()
+                    ..remoteId = deviceId
+                    ..stableId = tempId
+                    ..name = "Connecting Device..."
+                    ..lastSeen = DateTime.now();
+
+                  await isar.putFoundDevice(placeholder);
+
+                  MessageHandler.handleIncomingMessage(
+                    senderStableId: tempId,
+                    data: value,
+                  );
+                }
+              }).catchError((e) {
+                _log.severe('Error handling message from $deviceId: $e');
+              });
             } else {
               _log.warning('Message Write Error: Isar DB is closed');
             }
@@ -352,6 +367,12 @@ class BLEAdvertiser {
               properties: [CharacteristicProperties.read.index],
               permissions: [AttributePermissions.readable.index],
               value: Uint8List.fromList(pubKey.bytes),
+            ),
+            BleCharacteristic(
+              uuid: nameCharUuid,
+              properties: [CharacteristicProperties.read.index],
+              permissions: [AttributePermissions.readable.index],
+              value: Uint8List.fromList(utf8.encode(localName)),
             ),
           ],
         ),
