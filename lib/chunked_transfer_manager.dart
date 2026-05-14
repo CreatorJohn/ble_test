@@ -7,7 +7,6 @@ class ChunkedTransferManager {
   static final Map<String, Map<int, Uint8List>> _buffers = {};
   static final Map<String, Timer> _cleanupTimers = {};
   static const int chunkTimeoutSeconds = 60;
-  static const int parityInterval = 5; // 1 parity chunk for every 5 data chunks
 
   static final StreamController<Map<String, dynamic>> _completedPayloads =
       StreamController.broadcast();
@@ -23,7 +22,7 @@ class ChunkedTransferManager {
     final messageId = data[0];
     final dataChunksCount = data[1];
     final chunkIndex = data[2];
-    final totalChunksCount = data[3]; // Data + Parity
+    // Byte 3 (totalCount) is now redundant but kept for 4-byte header consistency
     final payload = data.sublist(4);
 
     final transferKey = "${senderStableId}_$messageId";
@@ -41,120 +40,21 @@ class ChunkedTransferManager {
       },
     );
 
-    // Attempt reassembly if we have enough chunks
-    _attemptReassembly(
-      transferKey,
-      senderStableId,
-      dataChunksCount,
-      totalChunksCount,
-    );
-  }
-
-  static void _attemptReassembly(
-    String key,
-    int senderId,
-    int dataCount,
-    int totalCount,
-  ) {
-    final buffer = _buffers[key];
-    if (buffer == null) return;
-
-    // 1. Check if we have all data chunks (Perfect success)
-    bool hasAllData = true;
-    for (int i = 0; i < dataCount; i++) {
-      if (!buffer.containsKey(i)) {
-        hasAllData = false;
-        break;
-      }
+    // Reassembly check: do we have all data chunks?
+    final buffer = _buffers[transferKey]!;
+    if (buffer.length == dataChunksCount) {
+      _finalizeTransfer(transferKey, senderStableId, dataChunksCount);
     }
-
-    if (hasAllData) {
-      _finalizeTransfer(key, senderId, dataCount);
-      return;
-    }
-
-    // 2. Check if we can recover missing chunks using parity
-    // For every block of 5, we can recover if only 1 is missing
-    bool canRecover = true;
-    for (
-      int blockStart = 0;
-      blockStart < dataCount;
-      blockStart += parityInterval
-    ) {
-      int missingInData = 0;
-      int missingIndex = -1;
-
-      for (
-        int i = blockStart;
-        i < blockStart + parityInterval && i < dataCount;
-        i++
-      ) {
-        if (!buffer.containsKey(i)) {
-          missingInData++;
-          missingIndex = i;
-        }
-      }
-
-      if (missingInData == 1) {
-        // We have exactly one missing. Do we have the corresponding parity chunk?
-        final parityIndex = dataCount + (blockStart ~/ parityInterval);
-        if (buffer.containsKey(parityIndex)) {
-          // YES! Recover missingIndex using XOR
-          buffer[missingIndex] = _recoverChunk(
-            buffer,
-            blockStart,
-            dataCount,
-            parityIndex,
-          );
-          _log.info(
-            'Recovered missing chunk $missingIndex for transfer $key using FEC',
-          );
-        } else {
-          canRecover = false;
-        }
-      } else if (missingInData > 1) {
-        canRecover = false;
-      }
-    }
-
-    // 3. Final check after recovery attempt
-    if (canRecover) {
-      // Re-verify we actually have all data chunks now
-      for (int i = 0; i < dataCount; i++) {
-        if (!buffer.containsKey(i)) return;
-      }
-      _finalizeTransfer(key, senderId, dataCount);
-    }
-  }
-
-  static Uint8List _recoverChunk(
-    Map<int, Uint8List> buffer,
-    int blockStart,
-    int dataCount,
-    int parityIndex,
-  ) {
-    final parity = buffer[parityIndex]!;
-    final result = Uint8List.fromList(parity);
-
-    for (
-      int i = blockStart;
-      i < blockStart + parityInterval && i < dataCount;
-      i++
-    ) {
-      final chunk = buffer[i];
-      if (chunk != null) {
-        for (int b = 0; b < chunk.length; b++) {
-          result[b] ^= chunk[b];
-        }
-      }
-    }
-    return result;
   }
 
   static void _finalizeTransfer(String key, int senderId, int dataCount) {
     final buffer = _buffers[key]!;
     final builder = BytesBuilder();
     for (int i = 0; i < dataCount; i++) {
+      if (!buffer.containsKey(i)) {
+        _log.severe('Finalizing transfer $key but missing chunk $i');
+        return;
+      }
       builder.add(buffer[i]!);
     }
 
@@ -173,56 +73,31 @@ class ChunkedTransferManager {
     int messageId, {
     int maxChunkSize = 200,
   }) {
-    final List<Uint8List> dataChunks = [];
+    final List<Uint8List> finalChunks = [];
     int offset = 0;
+    int index = 0;
 
-    // 1. Generate Data Chunks
+    // 1. Calculate how many chunks we need
+    final int dataCount = (payload.length / maxChunkSize).ceil();
+
+    // 2. Generate Data Chunks
     while (offset < payload.length) {
       final end = (offset + maxChunkSize > payload.length)
           ? payload.length
           : offset + maxChunkSize;
-      dataChunks.add(payload.sublist(offset, end));
+      final chunkData = payload.sublist(offset, end);
+
+      // Header format: [MsgId, DataCount, Index, TotalCount (unused)]
+      final chunk = Uint8List(4 + chunkData.length);
+      chunk[0] = messageId;
+      chunk[1] = dataCount;
+      chunk[2] = index;
+      chunk[3] = dataCount; // Total count same as data count
+      chunk.setRange(4, chunk.length, chunkData);
+
+      finalChunks.add(chunk);
       offset += maxChunkSize;
-    }
-
-    final int dataCount = dataChunks.length;
-    final List<Uint8List> finalChunks = [];
-
-    // 2. Generate Parity Chunks
-    final List<Uint8List> parityChunks = [];
-    for (int i = 0; i < dataCount; i += parityInterval) {
-      final parity = Uint8List(maxChunkSize);
-      for (int j = i; j < i + parityInterval && j < dataCount; j++) {
-        final chunk = dataChunks[j];
-        for (int b = 0; b < chunk.length; b++) {
-          parity[b] ^= chunk[b];
-        }
-      }
-      parityChunks.add(parity);
-    }
-
-    final int totalCount = dataCount + parityChunks.length;
-
-    // 3. Package Everything with Header
-    // Header format: [MsgId, DataCount, Index, TotalCount]
-    for (int i = 0; i < dataCount; i++) {
-      final chunk = Uint8List(4 + dataChunks[i].length);
-      chunk[0] = messageId;
-      chunk[1] = dataCount;
-      chunk[2] = i;
-      chunk[3] = totalCount;
-      chunk.setRange(4, chunk.length, dataChunks[i]);
-      finalChunks.add(chunk);
-    }
-
-    for (int i = 0; i < parityChunks.length; i++) {
-      final chunk = Uint8List(4 + parityChunks[i].length);
-      chunk[0] = messageId;
-      chunk[1] = dataCount;
-      chunk[2] = dataCount + i;
-      chunk[3] = totalCount;
-      chunk.setRange(4, chunk.length, parityChunks[i]);
-      finalChunks.add(chunk);
+      index++;
     }
 
     return finalChunks;
