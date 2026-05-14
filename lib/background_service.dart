@@ -578,6 +578,7 @@ Future<void> _fetchFullMetadata(
     BluetoothCharacteristic? locChar;
     BluetoothCharacteristic? keyChar;
     BluetoothCharacteristic? nameChar;
+    BluetoothCharacteristic? messageChar;
 
     for (final s in services) {
       if (s.uuid.toString().toLowerCase() ==
@@ -599,7 +600,30 @@ Future<void> _fetchFullMetadata(
           if (charId == BLEAdvertiser.nameCharUuid.toLowerCase()) {
             nameChar = c;
           }
+          if (charId == BLEAdvertiser.messageCharUuid.toLowerCase()) {
+            messageChar = c;
+          }
         }
+      }
+    }
+
+    if (messageChar != null) {
+      log.info('Subscribing to message notifications from $stableId...');
+      try {
+        await messageChar.setNotifyValue(true);
+        messageChar.onValueReceived.listen((value) {
+          if (value.isNotEmpty) {
+            log.info(
+              'Received notification chunk from $stableId (${value.length} bytes)',
+            );
+            MessageHandler.handleIncomingMessage(
+              senderStableId: stableId,
+              data: value,
+            );
+          }
+        });
+      } catch (e) {
+        log.warning('Failed to subscribe to notifications: $e');
       }
     }
 
@@ -616,6 +640,28 @@ Future<void> _fetchFullMetadata(
         }
       }
       return [];
+    }
+
+    if (picChar != null) {
+       // ... existing code ...
+    }
+
+    if (messageChar != null) {
+      log.info('Subscribing to message notifications from $stableId...');
+      try {
+        await messageChar.setNotifyValue(true);
+        messageChar.onValueReceived.listen((value) {
+          if (value.isNotEmpty) {
+            log.info('Received notification chunk from $stableId (${value.length} bytes)');
+            MessageHandler.handleIncomingMessage(
+              senderStableId: stableId,
+              data: value,
+            );
+          }
+        });
+      } catch (e) {
+        log.warning('Failed to subscribe to notifications: $e');
+      }
     }
 
     if (hashChar != null) {

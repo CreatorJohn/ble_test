@@ -41,7 +41,24 @@ class BLEAdvertiser {
 
   static bool get initialized => _initialized;
   static bool get hasInboundConnections => _connectedDevices.isNotEmpty;
+  static bool isDeviceConnected(String deviceId) => _connectedDevices.contains(deviceId);
   static Stream<Map<String, bool>> get connectionStream => _connectionController.stream;
+
+  static Future<void> sendNotification({
+    required String characteristicUuid,
+    required Uint8List value,
+    String? deviceId,
+  }) async {
+    try {
+      await BlePeripheral.updateCharacteristic(
+        characteristicId: characteristicUuid,
+        value: value,
+        deviceId: deviceId,
+      );
+    } catch (e) {
+      _log.warning('Failed to send notification: $e');
+    }
+  }
 
   factory BLEAdvertiser() => _instance;
 
@@ -334,7 +351,11 @@ class BLEAdvertiser {
           characteristics: [
             BleCharacteristic(
               uuid: messageCharUuid,
-              properties: [CharacteristicProperties.write.index],
+              properties: [
+                CharacteristicProperties.write.index,
+                CharacteristicProperties.notify.index,
+                CharacteristicProperties.indicate.index,
+              ],
               permissions: [AttributePermissions.writeable.index],
               value: Uint8List.fromList([0x00]),
             ),
@@ -343,6 +364,8 @@ class BLEAdvertiser {
               properties: [
                 CharacteristicProperties.read.index,
                 CharacteristicProperties.write.index,
+                CharacteristicProperties.notify.index,
+                CharacteristicProperties.indicate.index,
               ],
               permissions: [
                 AttributePermissions.readable.index,

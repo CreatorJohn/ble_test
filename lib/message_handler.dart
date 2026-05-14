@@ -76,6 +76,14 @@ class MessageHandler {
           final msgId = fullData[9];
           int ttl = fullData[10];
 
+          // Identity Linking: If this message came directly from the origin,
+          // ensure we have their remoteId (MAC) mapped to their stableId.
+          // This is critical for non-advertising devices like Chromebooks.
+          if (ttl == 10 || ttl == 5) { // Common starting TTLs
+             _log.info('Possible direct connection from $originSenderId. Linking identity...');
+             _linkIdentity(directSenderId, originSenderId);
+          }
+
           // Cache key: OriginSenderId (32-bit) + MsgId (8-bit)
           final cacheKey = (originSenderId << 8) | msgId;
 
@@ -116,6 +124,8 @@ class MessageHandler {
             return;
           }
         } else {
+          _log.info('Direct message from $originSenderId. Linking identity...');
+          _linkIdentity(directSenderId, originSenderId);
           decryptedData = await _decryptMessage(originSenderId, fullData);
           if (decryptedData == null || decryptedData.isEmpty) return;
           payloadToProcess = decryptedData;
@@ -226,9 +236,39 @@ class MessageHandler {
     FoundDevice neighbor,
     Uint8List payload,
   ) async {
-    final device = BluetoothDevice.fromId(neighbor.remoteId);
+    final messageId = payload[9]; // MsgId is at index 9 in 11-byte header
+    await _pushData(neighbor.remoteId, neighbor.stableId, payload, messageId);
+  }
+
+  static Future<void> _pushData(
+    String remoteId,
+    int stableId,
+    Uint8List payload,
+    int messageId, {
+    int maxChunkSize = 200,
+  }) async {
+    // 1. Check if they are already connected to US (Inbound)
+    if (BLEAdvertiser.isDeviceConnected(remoteId)) {
+      _log.info('Using Notify-based push for $stableId (Already connected)');
+      final chunks = ChunkedTransferManager.generateChunks(
+        payload,
+        messageId,
+        maxChunkSize: maxChunkSize,
+      );
+      for (final chunk in chunks) {
+        await BLEAdvertiser.sendNotification(
+          characteristicUuid: BLEAdvertiser.messageCharUuid,
+          value: chunk,
+          deviceId: remoteId,
+        );
+      }
+      return;
+    }
+
+    // 2. Standard Mesh Push (Connect to THEM)
+    final device = BluetoothDevice.fromId(remoteId);
     try {
-      _log.info('Relaying to ${neighbor.stableId}...');
+      _log.info('Connecting to neighbor $stableId for push...');
       await device.connect(
         timeout: const Duration(seconds: 15),
         autoConnect: false,
@@ -245,7 +285,7 @@ class MessageHandler {
         const Duration(seconds: 3),
         onTimeout: () => 23,
       );
-      final maxChunkSize = (mtu - 10).clamp(20, 500);
+      final negotiatedMax = (mtu - 10).clamp(20, 500);
 
       final services = await device.discoverServices();
       BluetoothCharacteristic? messageChar;
@@ -263,20 +303,19 @@ class MessageHandler {
       }
 
       if (messageChar != null) {
-        final messageId = payload[9]; // MsgId is at index 9 in 11-byte header
         final chunks = ChunkedTransferManager.generateChunks(
           payload,
           messageId,
-          maxChunkSize: maxChunkSize,
+          maxChunkSize: negotiatedMax,
         );
 
         for (final chunk in chunks) {
           await messageChar.write(chunk, withoutResponse: false);
         }
-        _log.info('Relayed message $messageId to ${neighbor.stableId}');
+        _log.info('Data pushed to $stableId successfully.');
       }
     } catch (e) {
-      _log.warning('Failed to relay to ${neighbor.stableId}: $e');
+      _log.warning('Failed to push data to $stableId: $e');
     } finally {
       try {
         await device.disconnect();
@@ -448,6 +487,57 @@ class MessageHandler {
     required String targetRemoteId,
     required Uint8List imageBytes,
   }) async {
+    final isar = IsarService();
+    final foundDevice = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(targetStableId)
+        .findFirst();
+
+    if (foundDevice == null || foundDevice.publicKey == null) {
+      _log.warning('Cannot push: Public key missing for $targetStableId');
+      return;
+    }
+
+    final payload = Uint8List(1 + imageBytes.length);
+    payload[0] = typeProfilePic;
+    payload.setRange(1, payload.length, imageBytes);
+
+    final encrypted = await _encryptMessage(
+      payload,
+      Uint8List.fromList(foundDevice.publicKey!),
+    );
+
+    final myId = await ProfileManager.getStableDeviceId();
+    final msgId = Random().nextInt(256);
+    final relayPayload = Uint8List(11 + encrypted.length);
+    final buffer = ByteData.view(relayPayload.buffer);
+
+    relayPayload[0] = typeRelay;
+    buffer.setUint32(1, targetStableId, Endian.big);
+    buffer.setUint32(5, myId, Endian.big);
+    relayPayload[9] = msgId;
+    relayPayload[10] = 5; // TTL 5 for profile pics
+    relayPayload.setRange(11, relayPayload.length, encrypted);
+
+    // 1. Check if they are already connected to US (Inbound)
+    if (BLEAdvertiser.isDeviceConnected(targetRemoteId)) {
+      _log.info('Using Notify-based profile push for $targetStableId');
+      final chunks = ChunkedTransferManager.generateChunks(
+        relayPayload,
+        msgId,
+        maxChunkSize: 200,
+      );
+      for (final chunk in chunks) {
+        await BLEAdvertiser.sendNotification(
+          characteristicUuid: BLEAdvertiser.profilePicCharUuid,
+          value: chunk,
+          deviceId: targetRemoteId,
+        );
+      }
+      return;
+    }
+
+    // 2. Standard Mesh Push (Connect to THEM)
     final device = BluetoothDevice.fromId(targetRemoteId);
     try {
       _log.info('Connecting to $targetStableId to push profile picture...');
@@ -491,38 +581,6 @@ class MessageHandler {
       }
 
       if (messageChar != null) {
-        final payload = Uint8List(1 + imageBytes.length);
-        payload[0] = typeProfilePic;
-        payload.setRange(1, payload.length, imageBytes);
-
-        final isar = IsarService();
-        final foundDevice = await isar.db.foundDevices
-            .where()
-            .stableIdEqualTo(targetStableId)
-            .findFirst();
-
-        if (foundDevice == null || foundDevice.publicKey == null) {
-          _log.warning('Cannot push: Public key missing for $targetStableId');
-          return;
-        }
-
-        final encrypted = await _encryptMessage(
-          payload,
-          Uint8List.fromList(foundDevice.publicKey!),
-        );
-
-        final myId = await ProfileManager.getStableDeviceId();
-        final msgId = Random().nextInt(256);
-        final relayPayload = Uint8List(11 + encrypted.length);
-        final buffer = ByteData.view(relayPayload.buffer);
-
-        relayPayload[0] = typeRelay;
-        buffer.setUint32(1, targetStableId, Endian.big);
-        buffer.setUint32(5, myId, Endian.big);
-        relayPayload[9] = msgId;
-        relayPayload[10] = 5; // TTL 5 for profile pics
-        relayPayload.setRange(11, relayPayload.length, encrypted);
-
         final chunks = ChunkedTransferManager.generateChunks(
           relayPayload,
           msgId,
@@ -600,40 +658,51 @@ class MessageHandler {
     buffer.setUint32(5, originId, Endian.big);
     ackPayload[9] = msgId;
 
-    final device = BluetoothDevice.fromId(neighbor.remoteId);
-    try {
-      _log.info('Pushing ACK to $targetNodeId...');
-      await device.connect(
-        timeout: const Duration(seconds: 15),
-        autoConnect: false,
-        license: License.free,
-      );
+    await _pushData(neighbor.remoteId, targetNodeId, ackPayload, msgId);
+  }
 
-      final services = await device.discoverServices();
-      BluetoothCharacteristic? messageChar;
-      for (final s in services) {
-        if (s.uuid.toString().toLowerCase() ==
-            BLEAdvertiser.serviceUuid.toLowerCase()) {
-          for (final c in s.characteristics) {
-            if (c.uuid.toString().toLowerCase() ==
-                BLEAdvertiser.messageCharUuid.toLowerCase()) {
-              messageChar = c;
-              break;
-            }
-          }
-        }
-      }
+  static Future<void> _linkIdentity(int directId, int originId) async {
+    if (directId == originId) return; // Already same or known
 
-      if (messageChar != null) {
-        await messageChar.write(ackPayload, withoutResponse: false);
-        _log.info('ACK pushed successfully.');
-      }
-    } catch (e) {
-      _log.warning('Failed to push ACK: $e');
-    } finally {
-      try {
-        await device.disconnect();
-      } catch (_) {}
+    final isar = IsarService();
+    // 1. Find the person who connected (placeholder)
+    final placeholder = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(directId)
+        .findFirst();
+    if (placeholder == null) return;
+
+    // 2. Find the person they claim to be (permanent record)
+    final permanent = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(originId)
+        .findFirst();
+
+    if (permanent != null) {
+      // Merge! Update permanent record with current MAC
+      _log.info('Linking MAC ${placeholder.remoteId} to ID $originId');
+      permanent.remoteId = placeholder.remoteId;
+      permanent.lastSeen = DateTime.now();
+      await isar.putFoundDevice(permanent);
+
+      // Clean up placeholder
+      await isar.db.writeTxn(() async {
+        await isar.db.foundDevices.delete(placeholder.id);
+      });
+    } else {
+      // Create new permanent record with this MAC
+      _log.info('Creating new ID record for $originId with MAC ${placeholder.remoteId}');
+      final newRecord = FoundDevice()
+        ..stableId = originId
+        ..remoteId = placeholder.remoteId
+        ..name = placeholder.name
+        ..lastSeen = DateTime.now();
+      await isar.putFoundDevice(newRecord);
+
+      // Clean up placeholder
+      await isar.db.writeTxn(() async {
+        await isar.db.foundDevices.delete(placeholder.id);
+      });
     }
   }
 }
