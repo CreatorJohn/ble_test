@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:ble_test/ble_advertiser.dart';
-import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
@@ -598,7 +598,24 @@ Future<void> _fetchFullMetadata(
     }
 
     // Small delay after connection for stability
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    // --- MTU Negotiation Start ---
+    if (Platform.isAndroid) {
+      try {
+        log.info('Requesting high MTU for $stableId...');
+        await device.requestMtu(517);
+        // Wait for MTU change
+        final mtu = await device.mtu.first.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => 23,
+        );
+        log.info('Negotiated MTU for $stableId: $mtu');
+      } catch (e) {
+        log.warning('MTU Request failed for $stableId: $e');
+      }
+    }
+    // --- MTU Negotiation End ---
 
     final services = await device.discoverServices();
 
@@ -740,69 +757,27 @@ Future<void> _fetchFullMetadata(
 
         if (picChar != null && (pictureMissing || hashMismatched)) {
           log.info(
-            'CONDITION MET: Requesting profile picture sync from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)',
+            'CONDITION MET: Pulling profile picture from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)',
           );
 
-          final syncCompleter = Completer<void>();
-          final subscription = ChunkedTransferManager.onPayloadComplete.listen((
-            event,
-          ) {
-            if (event['senderStableId'] == stableId) {
-              final payload = event['payload'] as Uint8List;
-              if (payload.isNotEmpty) {
-                final int type = payload[0];
-                log.info('Received completed payload from $stableId. Type: $type');
-
-                // Check if it's a direct profile pic (0x03) or wrapped in relay (0x04)
-                if (type == 0x03) {
-                  log.info('Direct profile picture received. Sync complete.');
-                  syncCompleter.complete();
-                } else if (type == 0x04 && payload.length > 11) {
-                  // Relay header check for inner type
-                  final innerType = payload[11];
-                  log.info('Relay payload received. Inner type: $innerType');
-                  if (innerType == 0x03) {
-                    log.info('Profile picture inside relay received. Sync complete.');
-                    syncCompleter.complete();
-                  }
-                }
-              }
-            }
-          });
-
           try {
-            log.info('Attempting push-style sync from $stableId...');
-            // Trigger push from neighbor
-            await picChar.write([0x01], withoutResponse: false);
-
-            log.info('Waiting for profile picture chunks from $stableId...');
-            await syncCompleter.future.timeout(const Duration(seconds: 15));
-          } catch (e) {
-            log.info(
-              'Push sync failed or timed out ($e), falling back to direct GATT read...',
+            log.info('Reading profile picture characteristic from $stableId...');
+            // Direct read for profile picture. Note: Large data handled by FBP long-read.
+            final bytes = await picChar.read().timeout(
+              const Duration(seconds: 45),
             );
-            try {
-              // Direct read fallback for non-advertising or legacy devices
-              final bytes = await picChar.read().timeout(
-                const Duration(seconds: 30),
-              );
-              if (bytes.isNotEmpty) {
-                log.info('Direct read successful: ${bytes.length} bytes');
-                // Re-fetch existing to update with new picture
-                final current = await isar.db.foundDevices
-                    .where()
-                    .stableIdEqualTo(stableId)
-                    .findFirst();
-                if (current != null) {
-                  current.profilePicture = Uint8List.fromList(bytes);
-                  await isar.putFoundDevice(current);
-                }
-              }
-            } catch (readErr) {
-              log.warning('Direct read fallback also failed: $readErr');
+            
+            if (bytes.isNotEmpty) {
+              log.info('Pull-style sync successful: ${bytes.length} bytes received from $stableId');
+              // Update record with new picture
+              existing.profilePicture = Uint8List.fromList(bytes);
+              // Save immediately to ensure it's not lost
+              await isar.putFoundDevice(existing);
+            } else {
+              log.warning('Read empty profile picture from $stableId');
             }
-          } finally {
-            await subscription.cancel();
+          } catch (e) {
+            log.warning('Failed to pull profile picture from $stableId: $e');
           }
         } else if (picChar == null) {
           log.warning('Profile picture characteristic NOT FOUND for $stableId');

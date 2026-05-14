@@ -243,45 +243,7 @@ class BLEAdvertiser {
             _log.warning('Message Write Warning: Received null value');
           }
         } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
-          _log.info('Profile Sync Triggered | Device: $deviceId');
-          final isar = IsarService();
-          if (isar.isOpen) {
-            isar
-                .findDeviceByRemoteId(deviceId)
-                .then((device) {
-                  if (device != null) {
-                    ProfileManager.getProfilePicture()
-                        .then((pic) {
-                          if (pic != null) {
-                            _log.info(
-                              'Pushing Profile Picture to ${device.stableId} (Remote: $deviceId)',
-                            );
-                            MessageHandler.pushProfilePicture(
-                              targetStableId: device.stableId,
-                              targetRemoteId: deviceId,
-                              imageBytes: pic,
-                            );
-                          } else {
-                            _log.warning(
-                              'Profile Sync Error: Local profile pic not found',
-                            );
-                          }
-                        })
-                        .catchError((e) {
-                          _log.severe('Error fetching local profile pic: $e');
-                        });
-                  } else {
-                    _log.warning(
-                      'Profile Sync Error: Device $deviceId not found in DB',
-                    );
-                  }
-                })
-                .catchError((e) {
-                  _log.severe('Error in findDeviceByRemoteId for Profile: $e');
-                });
-          } else {
-            _log.warning('Profile Sync Error: Isar DB is closed');
-          }
+          _log.info('Profile Write Request | Device: $deviceId (Ignored - Pull model active)');
         } else {
           _log.fine('Write request to unknown characteristic: $charUuidLower');
         }
