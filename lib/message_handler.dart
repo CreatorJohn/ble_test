@@ -542,6 +542,8 @@ class MessageHandler {
           value: chunk,
           deviceId: targetRemoteId,
         );
+        // Small delay to prevent buffer saturation on Notify-based push
+        await Future.delayed(const Duration(milliseconds: 100));
       }
       return;
     }

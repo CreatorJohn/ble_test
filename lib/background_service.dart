@@ -749,9 +749,23 @@ Future<void> _fetchFullMetadata(
           ) {
             if (event['senderStableId'] == stableId) {
               final payload = event['payload'] as Uint8List;
-              // MessageHandler.typeRelay (0x04) is the wrapper for mesh payloads
-              if (payload.isNotEmpty && payload[0] == 0x04) {
-                syncCompleter.complete();
+              if (payload.isNotEmpty) {
+                final int type = payload[0];
+                log.info('Received completed payload from $stableId. Type: $type');
+
+                // Check if it's a direct profile pic (0x03) or wrapped in relay (0x04)
+                if (type == 0x03) {
+                  log.info('Direct profile picture received. Sync complete.');
+                  syncCompleter.complete();
+                } else if (type == 0x04 && payload.length > 11) {
+                  // Relay header check for inner type
+                  final innerType = payload[11];
+                  log.info('Relay payload received. Inner type: $innerType');
+                  if (innerType == 0x03) {
+                    log.info('Profile picture inside relay received. Sync complete.');
+                    syncCompleter.complete();
+                  }
+                }
               }
             }
           });
