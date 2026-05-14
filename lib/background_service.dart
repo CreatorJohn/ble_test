@@ -447,8 +447,8 @@ Future<void> _startServiceLogic(
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
       log.info('BLE scan complete.');
 
-      // Wait 1 second for stack to cool down after scan
-      await Future.delayed(const Duration(seconds: 1));
+      // Wait 3 seconds for stack to cool down after scan
+      await Future.delayed(const Duration(seconds: 3));
 
       if (syncQueue.isNotEmpty) {
         log.info('Processing sync queue (${syncQueue.length} devices)...');
@@ -557,10 +557,10 @@ Future<void> _fetchFullMetadata(
   Logger log,
 ) async {
   try {
-    // Small delay and explicit disconnect to clear any pending registration issues
+    // Explicit disconnect and wait to ensure GATT client is released
     try {
       await device.disconnect();
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(seconds: 2));
     } catch (_) {}
 
     int attempts = 0;
@@ -575,7 +575,7 @@ Future<void> _fetchFullMetadata(
         await device.connect(
           autoConnect: false,
           license: License.free,
-          timeout: const Duration(seconds: 20),
+          timeout: const Duration(seconds: 30),
         );
         connected = true;
         log.info('Connected to $stableId');
@@ -587,9 +587,9 @@ Future<void> _fetchFullMetadata(
         } else if (errorStr.contains('257') ||
             errorStr.contains('FAILURE_REGISTERING_CLIENT')) {
           log.warning(
-            'Received error 257 (Register Client Fail). Cooling down 2s...',
+            'Received error 257 (Register Client Fail). Cooling down 5s...',
           );
-          await Future.delayed(const Duration(seconds: 2));
+          await Future.delayed(const Duration(seconds: 5));
           if (attempts >= 3) rethrow;
         } else {
           rethrow;
