@@ -24,6 +24,7 @@ class MessageHandler {
   static const int typeImage = 0x02;
   static const int typeProfilePic = 0x03;
   static const int typeRelay = 0x04;
+  static const int typeAck = 0x05;
 
   static final Map<int, DateTime> _seenRelayMessageIds = {};
   static Timer? _cacheCleanupTimer;

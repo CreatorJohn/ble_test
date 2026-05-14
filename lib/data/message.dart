@@ -14,4 +14,8 @@ class Message {
   late bool isReceived;
   late bool isImage;
   List<int>? data;
+
+  bool isDelivered = false;
+  @Index()
+  int? messageId;
 }
