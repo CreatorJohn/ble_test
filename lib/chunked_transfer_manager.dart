@@ -32,18 +32,30 @@ class ChunkedTransferManager {
     _buffers[transferKey]![chunkIndex] = payload;
 
     _cleanupTimers[transferKey]?.cancel();
-    _cleanupTimers[transferKey] =
-        Timer(const Duration(seconds: chunkTimeoutSeconds), () {
-      _buffers.remove(transferKey);
-      _cleanupTimers.remove(transferKey);
-      _log.warning('Transfer $transferKey timed out and was cleared.');
-    });
+    _cleanupTimers[transferKey] = Timer(
+      const Duration(seconds: chunkTimeoutSeconds),
+      () {
+        _buffers.remove(transferKey);
+        _cleanupTimers.remove(transferKey);
+        _log.warning('Transfer $transferKey timed out and was cleared.');
+      },
+    );
 
     // Attempt reassembly if we have enough chunks
-    _attemptReassembly(transferKey, senderStableId, dataChunksCount, totalChunksCount);
+    _attemptReassembly(
+      transferKey,
+      senderStableId,
+      dataChunksCount,
+      totalChunksCount,
+    );
   }
 
-  static void _attemptReassembly(String key, int senderId, int dataCount, int totalCount) {
+  static void _attemptReassembly(
+    String key,
+    int senderId,
+    int dataCount,
+    int totalCount,
+  ) {
     final buffer = _buffers[key];
     if (buffer == null) return;
 
@@ -64,11 +76,19 @@ class ChunkedTransferManager {
     // 2. Check if we can recover missing chunks using parity
     // For every block of 5, we can recover if only 1 is missing
     bool canRecover = true;
-    for (int blockStart = 0; blockStart < dataCount; blockStart += parityInterval) {
+    for (
+      int blockStart = 0;
+      blockStart < dataCount;
+      blockStart += parityInterval
+    ) {
       int missingInData = 0;
       int missingIndex = -1;
-      
-      for (int i = blockStart; i < blockStart + parityInterval && i < dataCount; i++) {
+
+      for (
+        int i = blockStart;
+        i < blockStart + parityInterval && i < dataCount;
+        i++
+      ) {
         if (!buffer.containsKey(i)) {
           missingInData++;
           missingIndex = i;
@@ -80,8 +100,15 @@ class ChunkedTransferManager {
         final parityIndex = dataCount + (blockStart ~/ parityInterval);
         if (buffer.containsKey(parityIndex)) {
           // YES! Recover missingIndex using XOR
-          buffer[missingIndex] = _recoverChunk(buffer, blockStart, dataCount, parityIndex);
-          _log.info('Recovered missing chunk $missingIndex for transfer $key using FEC');
+          buffer[missingIndex] = _recoverChunk(
+            buffer,
+            blockStart,
+            dataCount,
+            parityIndex,
+          );
+          _log.info(
+            'Recovered missing chunk $missingIndex for transfer $key using FEC',
+          );
         } else {
           canRecover = false;
         }
@@ -100,11 +127,20 @@ class ChunkedTransferManager {
     }
   }
 
-  static Uint8List _recoverChunk(Map<int, Uint8List> buffer, int blockStart, int dataCount, int parityIndex) {
+  static Uint8List _recoverChunk(
+    Map<int, Uint8List> buffer,
+    int blockStart,
+    int dataCount,
+    int parityIndex,
+  ) {
     final parity = buffer[parityIndex]!;
     final result = Uint8List.fromList(parity);
 
-    for (int i = blockStart; i < blockStart + parityInterval && i < dataCount; i++) {
+    for (
+      int i = blockStart;
+      i < blockStart + parityInterval && i < dataCount;
+      i++
+    ) {
       final chunk = buffer[i];
       if (chunk != null) {
         for (int b = 0; b < chunk.length; b++) {
@@ -125,18 +161,21 @@ class ChunkedTransferManager {
     _buffers.remove(key);
     _cleanupTimers[key]?.cancel();
     _cleanupTimers.remove(key);
-    
+
     _completedPayloads.add({
       'senderStableId': senderId,
       'payload': builder.toBytes(),
     });
   }
 
-  static List<Uint8List> generateChunks(Uint8List payload, int messageId,
-      {int maxChunkSize = 200}) {
+  static List<Uint8List> generateChunks(
+    Uint8List payload,
+    int messageId, {
+    int maxChunkSize = 200,
+  }) {
     final List<Uint8List> dataChunks = [];
     int offset = 0;
-    
+
     // 1. Generate Data Chunks
     while (offset < payload.length) {
       final end = (offset + maxChunkSize > payload.length)

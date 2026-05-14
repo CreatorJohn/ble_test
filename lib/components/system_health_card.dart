@@ -43,8 +43,7 @@ class SystemHealthCard extends ConsumerWidget {
                 label: "System-wide Battery Saver is ON",
                 buttonLabel: "Fix",
                 onPressed: () async {
-                  await DisableBatteryOptimization
-                      .showDisableBatteryOptimizationSettings();
+                  await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),
@@ -53,8 +52,7 @@ class SystemHealthCard extends ConsumerWidget {
                 label: "App Battery Optimization is ON",
                 buttonLabel: "Fix",
                 onPressed: () async {
-                  await DisableBatteryOptimization
-                      .showDisableBatteryOptimizationSettings();
+                  await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),
@@ -88,7 +86,11 @@ class _ActionItem extends StatelessWidget {
   final String buttonLabel;
   final VoidCallback onPressed;
 
-  const _ActionItem({required this.label, required this.buttonLabel, required this.onPressed});
+  const _ActionItem({
+    required this.label,
+    required this.buttonLabel,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {

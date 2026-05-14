@@ -132,6 +132,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 24),
             Row(
               children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final newName = _controller.text.trim();
+                      if (newName.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Name cannot be empty")),
+                        );
+                        return;
+                      }
+
+                      ref
+                          .read(advertisingNameProvider.notifier)
+                          .change(newName);
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Profile updated")),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(Icons.save),
+                    label: const Text("Save Profile & Advertise"),
+                  ),
+                ),
+                if (isAdvertising) const SizedBox(width: 16),
                 if (isAdvertising)
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -147,33 +178,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     icon: Icon(Icons.stop),
                     label: Text("Stop"),
                   ),
-                if (isAdvertising) const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    final newName = _controller.text.trim();
-                    if (newName.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Name cannot be empty")),
-                      );
-                      return;
-                    }
-
-                    ref.read(advertisingNameProvider.notifier).change(newName);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Profile updated")),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.save),
-                  label: const Text("Save Profile & Advertise"),
-                ),
               ],
             ),
           ],

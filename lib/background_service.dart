@@ -359,6 +359,8 @@ Future<void> _startServiceLogic(
         } catch (_) {
           log.warning('Bluetooth did not turn ON in time, skipping scan');
         }
+      } else {
+        log.info('Bluetooth state is $state');
       }
 
       final isScanning = FlutterBluePlus.isScanningNow;

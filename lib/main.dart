@@ -70,7 +70,9 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
   }
 
   void _setOnlineStatus(bool isOnline) {
-    FlutterBackgroundService().invoke("setOnlineStatus", {"isOnline": isOnline});
+    FlutterBackgroundService().invoke("setOnlineStatus", {
+      "isOnline": isOnline,
+    });
   }
 
   @override

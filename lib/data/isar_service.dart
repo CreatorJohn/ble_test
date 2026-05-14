@@ -24,18 +24,22 @@ class IsarService {
     if (_isar != null && _isar!.isOpen) return;
 
     final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open(
-      [FoundDeviceSchema, MessageSchema],
-      directory: dir.path,
-    );
+    _isar = await Isar.open([
+      FoundDeviceSchema,
+      MessageSchema,
+    ], directory: dir.path);
   }
 
   Stream<List<FoundDevice>> watchFoundDevices() {
-    return db.foundDevices.where().sortByLastSeenDesc().watch(fireImmediately: true);
+    return db.foundDevices.where().sortByLastSeenDesc().watch(
+      fireImmediately: true,
+    );
   }
 
   Stream<List<Message>> watchMessages() {
-    return db.messages.where().sortByTimestampDesc().watch(fireImmediately: true);
+    return db.messages.where().sortByTimestampDesc().watch(
+      fireImmediately: true,
+    );
   }
 
   Future<void> putFoundDevice(FoundDevice device) async {
@@ -51,7 +55,9 @@ class IsarService {
   }
 
   Future<List<FoundDevice>> findActiveNeighbors(int excludeId) async {
-    final sixtySecondsAgo = DateTime.now().subtract(const Duration(seconds: 60));
+    final sixtySecondsAgo = DateTime.now().subtract(
+      const Duration(seconds: 60),
+    );
     return await db.foundDevices
         .filter()
         .lastSeenGreaterThan(sixtySecondsAgo)

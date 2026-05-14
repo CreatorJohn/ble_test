@@ -107,8 +107,13 @@ class BlePeripheralPigeon extends BlePeripheralInterface {
         data: Uint8List(0),
       );
     }
-    return _channel.startAdvertising(services, localName, timeout,
-        manufacturerData, addManufacturerDataInScanResponse, scanResponseManufacturerData);
+    return _channel.startAdvertising(
+        services,
+        localName,
+        timeout,
+        manufacturerData,
+        addManufacturerDataInScanResponse,
+        scanResponseManufacturerData);
   }
 
   /// Stop advertising

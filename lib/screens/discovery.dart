@@ -408,7 +408,7 @@ class DiscoveryScreen extends ConsumerWidget {
             const SnackBar(content: Text("Sending message...")),
           );
 
-          final messageId = relayPayload[5];
+          final messageId = relayPayload[9];
           final chunks = ChunkedTransferManager.generateChunks(
             relayPayload,
             messageId,
@@ -424,6 +424,7 @@ class DiscoveryScreen extends ConsumerWidget {
           await MessageHandler.handleOutgoingMessage(
             receiverStableId: device.stableId,
             content: content,
+            messageId: messageId,
           );
           scaffoldMessenger.showSnackBar(
             SnackBar(content: Text("Encrypted message sent! ($sent chunks)")),

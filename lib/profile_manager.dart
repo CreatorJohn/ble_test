@@ -23,9 +23,7 @@ class ProfileManager {
 
   static Future<void> pickAndSaveProfilePicture() async {
     final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: ImageSource.gallery,
-    );
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image == null) return;
 
@@ -51,7 +49,7 @@ class ProfileManager {
 
     final bytes = await croppedFile.readAsBytes();
     final jpgBytes = await compute(_processImage, bytes);
-    
+
     if (jpgBytes != null) {
       await saveProfilePicture(jpgBytes);
     }
@@ -115,8 +113,10 @@ class ProfileManager {
 
     return SimpleKeyPairData(
       base64Decode(privBase64),
-      publicKey:
-          SimplePublicKey(base64Decode(pubBase64), type: KeyPairType.x25519),
+      publicKey: SimplePublicKey(
+        base64Decode(pubBase64),
+        type: KeyPairType.x25519,
+      ),
       type: KeyPairType.x25519,
     );
   }
