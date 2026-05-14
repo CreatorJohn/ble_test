@@ -131,6 +131,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 24),
             Row(
+              spacing: 16,
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
@@ -162,12 +163,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     label: const Text("Save Profile & Advertise"),
                   ),
                 ),
-                if (isAdvertising) const SizedBox(width: 16),
                 if (isAdvertising)
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade700,
-                      textStyle: TextStyle(color: Colors.white),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onPressed: () {
                       FlutterBackgroundService().invoke("stopAdvertising");
