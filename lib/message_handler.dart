@@ -92,6 +92,10 @@ class MessageHandler {
             _log.info(
               'We are the destination for relay message $msgId from $originSenderId',
             );
+
+            // Generate and push ACK
+            _pushAck(directSenderId, originSenderId, msgId);
+
             final innerPayload = fullData.sublist(11);
             decryptedData = await _decryptMessage(originSenderId, innerPayload);
             if (decryptedData == null || decryptedData.isEmpty) return;
@@ -528,6 +532,58 @@ class MessageHandler {
       }
     } catch (e) {
       _log.severe('Failed to push profile picture: $e');
+    } finally {
+      try {
+        await device.disconnect();
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> _pushAck(int targetNodeId, int originId, int msgId) async {
+    final isar = IsarService();
+    final neighbor = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(targetNodeId)
+        .findFirst();
+    if (neighbor == null) return;
+
+    final ackPayload = Uint8List(10);
+    final buffer = ByteData.view(ackPayload.buffer);
+    ackPayload[0] = typeAck;
+    buffer.setUint32(1, targetNodeId, Endian.big);
+    buffer.setUint32(5, originId, Endian.big);
+    ackPayload[9] = msgId;
+
+    final device = BluetoothDevice.fromId(neighbor.remoteId);
+    try {
+      _log.info('Pushing ACK to $targetNodeId...');
+      await device.connect(
+        timeout: const Duration(seconds: 15),
+        autoConnect: false,
+        license: License.free,
+      );
+
+      final services = await device.discoverServices();
+      BluetoothCharacteristic? messageChar;
+      for (final s in services) {
+        if (s.uuid.toString().toLowerCase() ==
+            BLEAdvertiser.serviceUuid.toLowerCase()) {
+          for (final c in s.characteristics) {
+            if (c.uuid.toString().toLowerCase() ==
+                BLEAdvertiser.messageCharUuid.toLowerCase()) {
+              messageChar = c;
+              break;
+            }
+          }
+        }
+      }
+
+      if (messageChar != null) {
+        await messageChar.write(ackPayload, withoutResponse: false);
+        _log.info('ACK pushed successfully.');
+      }
+    } catch (e) {
+      _log.warning('Failed to push ACK: $e');
     } finally {
       try {
         await device.disconnect();
