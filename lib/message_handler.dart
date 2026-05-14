@@ -41,45 +41,50 @@ class MessageHandler {
   static void initialize() {
     _startCacheCleanupTimer();
     ChunkedTransferManager.onPayloadComplete.listen((event) async {
-      final senderStableId = event['senderStableId'] as int;
+      final directSenderId = event['senderStableId'] as int;
       final fullData = event['payload'] as Uint8List;
 
       try {
         final int type = fullData[0];
         Uint8List? decryptedData;
         Uint8List payloadToProcess;
+        int originSenderId = directSenderId;
 
         if (type == typeRelay) {
-          if (fullData.length < 7) return; // Header: Target(4), MsgId(1), TTL(1)
+          if (fullData.length < 11) return; // Header: Target(4), Origin(4), MsgId(1), TTL(1)
           final buffer = ByteData.view(fullData.buffer);
           final targetId = buffer.getUint32(1, Endian.big);
-          final msgId = fullData[5];
-          int ttl = fullData[6];
+          originSenderId = buffer.getUint32(5, Endian.big);
+          final msgId = fullData[9];
+          int ttl = fullData[10];
 
-          if (_seenRelayMessageIds.containsKey(msgId)) {
-            _log.info('Dropped duplicate relay message $msgId');
+          // Cache key: OriginSenderId (32-bit) + MsgId (8-bit)
+          final cacheKey = (originSenderId << 8) | msgId;
+
+          if (_seenRelayMessageIds.containsKey(cacheKey)) {
+            _log.info('Dropped duplicate relay message $msgId from $originSenderId');
             return;
           }
-          _seenRelayMessageIds[msgId] = DateTime.now();
+          _seenRelayMessageIds[cacheKey] = DateTime.now();
 
           final myId = await ProfileManager.getStableDeviceId();
           if (targetId == myId) {
-            _log.info('We are the destination for relay message $msgId');
-            final innerPayload = fullData.sublist(7);
-            decryptedData = await _decryptMessage(senderStableId, innerPayload);
+            _log.info('We are the destination for relay message $msgId from $originSenderId');
+            final innerPayload = fullData.sublist(11);
+            decryptedData = await _decryptMessage(originSenderId, innerPayload);
             if (decryptedData == null || decryptedData.isEmpty) return;
             payloadToProcess = decryptedData;
           } else if (ttl > 1) {
             _log.info('Forwarding relay message $msgId to $targetId (TTL: $ttl)');
-            fullData[6] = ttl - 1;
-            _forwardRelayPayload(fullData, targetId, senderStableId);
+            fullData[10] = ttl - 1;
+            _forwardRelayPayload(fullData, targetId, directSenderId);
             return;
           } else {
             _log.info('TTL expired for relay message $msgId');
             return;
           }
         } else {
-          decryptedData = await _decryptMessage(senderStableId, fullData);
+          decryptedData = await _decryptMessage(originSenderId, fullData);
           if (decryptedData == null || decryptedData.isEmpty) return;
           payloadToProcess = decryptedData;
         }
@@ -92,20 +97,20 @@ class MessageHandler {
           final isar = IsarService();
           final device = await isar.db.foundDevices
               .where()
-              .stableIdEqualTo(senderStableId)
+              .stableIdEqualTo(originSenderId)
               .findFirst();
           if (device != null) {
             device.profilePicture = payload;
             device.lastPictureSync = DateTime.now();
             await isar.putFoundDevice(device);
-            _log.info('Updated profile picture for $senderStableId');
+            _log.info('Updated profile picture for $originSenderId');
           }
           return;
         }
 
         final myStableId = await ProfileManager.getStableDeviceId();
         final message = Message()
-          ..senderStableId = senderStableId
+          ..senderStableId = originSenderId
           ..receiverStableId = myStableId
           ..timestamp = DateTime.now()
           ..isReceived = true;
@@ -124,7 +129,7 @@ class MessageHandler {
 
         await IsarService().putMessage(message);
         _log.info(
-            'Decrypted and saved message from $senderStableId (Type: $innerType)');
+            'Decrypted and saved message from $originSenderId (Type: $innerType)');
       } catch (e) {
         _log.severe('Failed to decrypt or decode message: $e');
       }
@@ -204,7 +209,7 @@ class MessageHandler {
       }
 
       if (messageChar != null) {
-        final messageId = payload[5]; // Reuse existing MsgId
+        final messageId = payload[9]; // MsgId is at index 9 in 11-byte header
         final chunks = ChunkedTransferManager.generateChunks(
           payload,
           messageId,
@@ -358,15 +363,17 @@ class MessageHandler {
         await getEncryptedPayload(targetStableId, text: text, image: image);
     if (encrypted == null) return null;
 
+    final myId = await ProfileManager.getStableDeviceId();
     final msgId = Random().nextInt(256);
-    final relayPayload = Uint8List(7 + encrypted.length);
+    final relayPayload = Uint8List(11 + encrypted.length);
     final buffer = ByteData.view(relayPayload.buffer);
 
     relayPayload[0] = typeRelay;
     buffer.setUint32(1, targetStableId, Endian.big);
-    relayPayload[5] = msgId;
-    relayPayload[6] = ttl;
-    relayPayload.setRange(7, relayPayload.length, encrypted);
+    buffer.setUint32(5, myId, Endian.big);
+    relayPayload[9] = msgId;
+    relayPayload[10] = ttl;
+    relayPayload.setRange(11, relayPayload.length, encrypted);
 
     return relayPayload;
   }
@@ -436,15 +443,17 @@ class MessageHandler {
           Uint8List.fromList(foundDevice.publicKey!),
         );
 
+        final myId = await ProfileManager.getStableDeviceId();
         final msgId = Random().nextInt(256);
-        final relayPayload = Uint8List(7 + encrypted.length);
+        final relayPayload = Uint8List(11 + encrypted.length);
         final buffer = ByteData.view(relayPayload.buffer);
 
         relayPayload[0] = typeRelay;
         buffer.setUint32(1, targetStableId, Endian.big);
-        relayPayload[5] = msgId;
-        relayPayload[6] = 5; // TTL 5 for profile pics
-        relayPayload.setRange(7, relayPayload.length, encrypted);
+        buffer.setUint32(5, myId, Endian.big);
+        relayPayload[9] = msgId;
+        relayPayload[10] = 5; // TTL 5 for profile pics
+        relayPayload.setRange(11, relayPayload.length, encrypted);
 
         final chunks = ChunkedTransferManager.generateChunks(
           relayPayload,
