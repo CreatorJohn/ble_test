@@ -32,8 +32,13 @@ class BLEAdvertiser {
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
+  static final Set<String> _connectedDevices = {};
+  static final StreamController<Map<String, bool>> _connectionController =
+      StreamController.broadcast();
 
   static bool get initialized => _initialized;
+  static bool get hasInboundConnections => _connectedDevices.isNotEmpty;
+  static Stream<Map<String, bool>> get connectionStream => _connectionController.stream;
 
   factory BLEAdvertiser() => _instance;
 
@@ -131,6 +136,16 @@ class BLEAdvertiser {
       if (error != null) {
         _log.severe('Plugin reported advertisement error: $error');
       }
+    });
+
+    BlePeripheral.setConnectionStateChangeCallback((deviceId, connected) {
+      _log.info('Connection State Change | Device: $deviceId | Connected: $connected');
+      if (connected) {
+        _connectedDevices.add(deviceId);
+      } else {
+        _connectedDevices.remove(deviceId);
+      }
+      _connectionController.add({deviceId: connected});
     });
 
     BlePeripheral.setWriteRequestCallback((

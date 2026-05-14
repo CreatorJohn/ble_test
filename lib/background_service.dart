@@ -118,8 +118,8 @@ Future<void> _startServiceLogic(
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
 
-    if (isAdUpdating || isScanOperationInProgress) {
-      // Already in cooldown or scanning, mark for trailing update
+    if (isAdUpdating || isScanOperationInProgress || BLEAdvertiser.hasInboundConnections) {
+      // Already in cooldown, scanning, or being accessed by neighbor
       needsTrailingUpdate = true;
       return;
     }
@@ -148,6 +148,15 @@ Future<void> _startServiceLogic(
       }
     });
   }
+
+  // Listen for neighbor disconnections to trigger deferred ad updates
+  BLEAdvertiser.connectionStream.listen((event) {
+    final isConnected = event.values.first;
+    if (!isConnected && needsTrailingUpdate && advertisingOn) {
+      log.info('Neighbor disconnected, triggering deferred ad update...');
+      updateAd();
+    }
+  });
 
   log.info('Setting up location stream...');
   Geolocator.getPositionStream(
@@ -330,6 +339,20 @@ Future<void> _startServiceLogic(
       log.info('Scan operation already in progress, skipping trigger.');
       return;
     }
+
+    // If a neighbor is connected to us, defer scan to avoid dropping their connection
+    int deferCount = 0;
+    while (BLEAdvertiser.hasInboundConnections && deferCount < 6) {
+      log.info('Inbound connection active, deferring scan (attempt ${deferCount + 1}/6)...');
+      await Future.delayed(const Duration(seconds: 5));
+      deferCount++;
+    }
+
+    if (BLEAdvertiser.hasInboundConnections) {
+      log.warning('Inbound connection still active after 30s, skipping this scan cycle.');
+      return;
+    }
+
     isScanOperationInProgress = true;
 
     try {
