@@ -113,12 +113,13 @@ Future<void> _startServiceLogic(
 
   bool isAdUpdating = false;
   bool needsTrailingUpdate = false;
+  bool isScanOperationInProgress = false;
 
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
 
-    if (isAdUpdating) {
-      // Already in cooldown, mark for trailing update
+    if (isAdUpdating || isScanOperationInProgress) {
+      // Already in cooldown or scanning, mark for trailing update
       needsTrailingUpdate = true;
       return;
     }
@@ -323,7 +324,6 @@ Future<void> _startServiceLogic(
   const scanDuration = Duration(seconds: 20);
   const waitDuration = Duration(seconds: 80);
   DateTime? lastScanStartTime;
-  bool isScanOperationInProgress = false;
 
   Future<void> startSafeScan() async {
     if (isScanOperationInProgress) {
@@ -370,11 +370,21 @@ Future<void> _startServiceLogic(
       await FlutterBluePlus.startScan(
         timeout: scanDuration,
         withServices: [Guid(BLEAdvertiser.serviceUuid)],
-        androidScanMode: AndroidScanMode.lowPower,
-        oneByOne: true, // More reliable for background/low-memory
+        androidScanMode: AndroidScanMode.balanced,
+        oneByOne: true,
       );
-      
-      // Wait for scan to actually stop (Future completes when timeout hits)
+
+      // Wait for scan to actually start (state flips to true)
+      try {
+        await FlutterBluePlus.isScanning
+            .where((s) => s == true)
+            .first
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {
+        // If it was super fast or already started, ignore timeout
+      }
+
+      // Wait for scan to actually stop
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
       log.info('BLE scan complete.');
 
@@ -396,6 +406,9 @@ Future<void> _startServiceLogic(
       lastScanStartTime = null;
     } finally {
       isScanOperationInProgress = false;
+      if (needsTrailingUpdate && advertisingOn) {
+        updateAd();
+      }
     }
   }
 
@@ -483,12 +496,24 @@ Future<void> _fetchFullMetadata(
     // Small delay and explicit disconnect to clear any pending registration issues
     try {
       await device.disconnect();
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 1000));
     } catch (_) {}
 
     log.info('Connecting to $stableId to fetch metadata...');
-    await device.connect(autoConnect: false, license: License.free);
-    log.info('Connected to $stableId');
+    try {
+      await device.connect(
+        autoConnect: false,
+        license: License.free,
+        timeout: const Duration(seconds: 20),
+      );
+      log.info('Connected to $stableId');
+    } catch (e) {
+      if (e.toString().contains('already_connected')) {
+        log.info('Already connected to $stableId');
+      } else {
+        rethrow;
+      }
+    }
 
     // Small delay after connection for stability
     await Future.delayed(const Duration(milliseconds: 500));
