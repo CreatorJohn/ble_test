@@ -16,7 +16,7 @@ import 'package:logging/logging.dart';
 class ProfileManager {
   static const String _hashKey = 'profile_hash_6';
   static const String _deviceIdKey = 'stable_device_id_4';
-  static const String _imageFileName = 'profile_pic.webp';
+  static const String _imageFileName = 'profile_pic.jpg';
   static const String _privateKeyKey = 'secure_private_key_v1';
   static const String _publicKeyKey = 'public_key_v1';
 
@@ -56,11 +56,11 @@ class ProfileManager {
     final bytes = await croppedFile.readAsBytes();
     _log.info('Original cropped size: ${bytes.length} bytes');
 
-    final webpBytes = await compute(_processImage, bytes);
+    final jpgBytes = await compute(_processImage, bytes);
 
-    if (webpBytes != null) {
-      _log.info('Processed WebP size: ${webpBytes.length} bytes');
-      await saveProfilePicture(webpBytes);
+    if (jpgBytes != null) {
+      _log.info('Processed JPG size: ${jpgBytes.length} bytes');
+      await saveProfilePicture(jpgBytes);
     } else {
       _log.severe('Failed to process image');
     }
@@ -78,7 +78,7 @@ class ProfileManager {
       interpolation: img.Interpolation.linear,
     );
 
-    return Uint8List.fromList(img.encodeWebP(resized, quality: 75));
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 70));
   }
 
   static Future<int> getStableDeviceId() async {
