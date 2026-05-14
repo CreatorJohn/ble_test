@@ -426,7 +426,9 @@ Future<void> _startServiceLogic(
 
   service.on('startAdvertising').listen((event) async {
     final name = event?['name'];
-    if (!BLEAdvertiser.initialized) await advertiser.initialize();
+    if (!BLEAdvertiser.initialized) {
+      await advertiser.initialize(ignorePermissions: true);
+    }
     advertisingOn = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('advertising_on', true);

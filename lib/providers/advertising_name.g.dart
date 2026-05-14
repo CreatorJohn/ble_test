@@ -41,7 +41,7 @@ final class IsAdvertisingProvider
   }
 }
 
-String _$isAdvertisingHash() => r'1fcc1cddef283ba629689bbaff2293101930463c';
+String _$isAdvertisingHash() => r'cd6d84e971367172bea1648dec05f24fba482d83';
 
 abstract class _$IsAdvertising extends $Notifier<bool> {
   bool build();
@@ -85,7 +85,7 @@ final class AdvertisingNameProvider
   AdvertisingName create() => AdvertisingName();
 }
 
-String _$advertisingNameHash() => r'cb557999836f7505f5213c5bea334a44c971e01a';
+String _$advertisingNameHash() => r'96b38673f252601a2bfe27123550ca28ca9c9095';
 
 abstract class _$AdvertisingName extends $AsyncNotifier<String> {
   FutureOr<String> build();

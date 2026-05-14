@@ -52,6 +52,7 @@ class AdvertisingName extends _$AdvertisingName {
     state = AsyncData(trimmed);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storageKey, trimmed);
+    FlutterBackgroundService().invoke("startAdvertising", {"name": trimmed});
   }
 
   Future<void> reset() async {

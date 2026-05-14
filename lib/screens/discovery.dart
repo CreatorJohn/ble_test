@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 import 'package:ble_test/background_service.dart';
 import 'package:ble_test/ble_advertiser.dart';
@@ -47,38 +46,6 @@ class DiscoveryScreen extends ConsumerWidget {
                   icon: const Icon(Icons.refresh),
                   tooltip: "Reset Service & Data",
                   color: Theme.of(context).colorScheme.error,
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () {
-                    if (isAdvertising) {
-                      FlutterBackgroundService().invoke("stopAdvertising");
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Stopping broadcast")),
-                      );
-                    } else {
-                      final adName =
-                          ref.read(advertisingNameProvider).value ?? "BLE Test";
-                      FlutterBackgroundService().invoke("startAdvertising", {
-                        "name": adName,
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            isAdvertising
-                                ? "Attempting manual broadcast start with: $adName"
-                                : "Stopping broadcast",
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  icon: Icon(
-                    isAdvertising
-                        ? Icons.record_voice_over
-                        : Icons.play_disabled,
-                  ),
-                  label: Text(isAdvertising ? "Broadcasting" : "Broadcast"),
                 ),
                 const SizedBox(width: 8),
                 _StatusIndicator(
@@ -420,12 +387,12 @@ class DiscoveryScreen extends ConsumerWidget {
         }
 
         if (messageChar != null) {
-          final encryptedPayload = await MessageHandler.getEncryptedPayload(
+          final relayPayload = await MessageHandler.getRelayWrappedPayload(
             device.stableId,
             text: content,
           );
 
-          if (encryptedPayload == null) {
+          if (relayPayload == null) {
             scaffoldMessenger.showSnackBar(
               const SnackBar(
                 content: Text(
@@ -441,9 +408,9 @@ class DiscoveryScreen extends ConsumerWidget {
             const SnackBar(content: Text("Sending message...")),
           );
 
-          final messageId = Random().nextInt(256);
+          final messageId = relayPayload[5];
           final chunks = ChunkedTransferManager.generateChunks(
-            encryptedPayload,
+            relayPayload,
             messageId,
             maxChunkSize: maxChunkSize,
           );

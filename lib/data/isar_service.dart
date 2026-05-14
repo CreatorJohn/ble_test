@@ -50,6 +50,16 @@ class IsarService {
     });
   }
 
+  Future<List<FoundDevice>> findActiveNeighbors(int excludeId) async {
+    final sixtySecondsAgo = DateTime.now().subtract(const Duration(seconds: 60));
+    return await db.foundDevices
+        .filter()
+        .lastSeenGreaterThan(sixtySecondsAgo)
+        .not()
+        .stableIdEqualTo(excludeId)
+        .findAll();
+  }
+
   Future<FoundDevice?> findDeviceByRemoteId(String remoteId) async {
     return await db.foundDevices.filter().remoteIdEqualTo(remoteId).findFirst();
   }

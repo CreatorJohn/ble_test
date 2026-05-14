@@ -47,6 +47,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final isServiceRunning = ref.watch(isServiceRunningProvider).value ?? false;
+    final isAdvertising = ref.watch(isAdvertisingProvider);
 
     ref.listen(advertisingNameProvider, (previous, next) {
       if (next.hasError || !next.hasValue) return;
@@ -66,9 +67,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           children: [
             Text(
               "Your Profile",
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 32),
             GestureDetector(
@@ -86,8 +87,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                     child: CircleAvatar(
                       radius: 80,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
                       backgroundImage: _profilePic != null
                           ? MemoryImage(_profilePic!)
                           : null,
@@ -128,49 +130,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               },
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  final newName = _controller.text.trim();
-                  if (newName.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Name cannot be empty")),
-                    );
-                    return;
-                  }
-                  
-                  ref.read(advertisingNameProvider.notifier).change(newName);
-                  
-                  if (isServiceRunning) {
-                    FlutterBackgroundService().invoke("startAdvertising", {
-                      "name": newName,
-                    });
-                  }
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Profile updated")),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            Row(
+              children: [
+                if (isAdvertising)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      textStyle: TextStyle(color: Colors.white),
+                    ),
+                    onPressed: () {
+                      FlutterBackgroundService().invoke("stopAdvertising");
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Stopping broadcast")),
+                      );
+                    },
+                    icon: Icon(Icons.stop),
+                    label: Text("Stop"),
                   ),
+                if (isAdvertising) const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    final newName = _controller.text.trim();
+                    if (newName.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Name cannot be empty")),
+                      );
+                      return;
+                    }
+
+                    ref.read(advertisingNameProvider.notifier).change(newName);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Profile updated")),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.save),
+                  label: const Text("Save Profile & Advertise"),
                 ),
-                icon: const Icon(Icons.save),
-                label: const Text("Save Profile"),
-              ),
+              ],
             ),
-            const SizedBox(height: 16),
-            if (!isServiceRunning)
-              const Text(
-                "Note: Background Scanner must be active for others to discover you.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
           ],
         ),
       ),
