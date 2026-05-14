@@ -15,6 +15,12 @@ import 'package:ble_test/data/found_device.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:isar_community/isar.dart';
 
+class PendingAck {
+  final int upstreamNodeId;
+  final DateTime timestamp;
+  PendingAck(this.upstreamNodeId, this.timestamp);
+}
+
 class MessageHandler {
   static final Logger _log = Logger('MessageHandler');
   static final _cipher = Chacha20.poly1305Aead();
@@ -27,6 +33,7 @@ class MessageHandler {
   static const int typeAck = 0x05;
 
   static final Map<int, DateTime> _seenRelayMessageIds = {};
+  static final Map<int, PendingAck> _pendingAcks = {};
   static Timer? _cacheCleanupTimer;
 
   static void _startCacheCleanupTimer() {
@@ -34,8 +41,16 @@ class MessageHandler {
     _cacheCleanupTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       final now = DateTime.now();
       // Cache Lifetime = (TTL 10 * 100s) + 20s = 1020s
-      _seenRelayMessageIds.removeWhere((id, timestamp) =>
-          now.difference(timestamp) > const Duration(seconds: 1020));
+      _seenRelayMessageIds.removeWhere(
+        (id, timestamp) =>
+            now.difference(timestamp) > const Duration(seconds: 1020),
+      );
+
+      // Cleanup breadcrumbs (50 minutes)
+      _pendingAcks.removeWhere(
+        (key, pendingAck) =>
+            now.difference(pendingAck.timestamp) > const Duration(minutes: 50),
+      );
     });
   }
 
@@ -52,7 +67,9 @@ class MessageHandler {
         int originSenderId = directSenderId;
 
         if (type == typeRelay) {
-          if (fullData.length < 11) return; // Header: Target(4), Origin(4), MsgId(1), TTL(1)
+          if (fullData.length < 11) {
+            return; // Header: Target(4), Origin(4), MsgId(1), TTL(1)
+          }
           final buffer = ByteData.view(fullData.buffer);
           final targetId = buffer.getUint32(1, Endian.big);
           originSenderId = buffer.getUint32(5, Endian.big);
@@ -63,20 +80,30 @@ class MessageHandler {
           final cacheKey = (originSenderId << 8) | msgId;
 
           if (_seenRelayMessageIds.containsKey(cacheKey)) {
-            _log.info('Dropped duplicate relay message $msgId from $originSenderId');
+            _log.info(
+              'Dropped duplicate relay message $msgId from $originSenderId',
+            );
             return;
           }
           _seenRelayMessageIds[cacheKey] = DateTime.now();
 
           final myId = await ProfileManager.getStableDeviceId();
           if (targetId == myId) {
-            _log.info('We are the destination for relay message $msgId from $originSenderId');
+            _log.info(
+              'We are the destination for relay message $msgId from $originSenderId',
+            );
             final innerPayload = fullData.sublist(11);
             decryptedData = await _decryptMessage(originSenderId, innerPayload);
             if (decryptedData == null || decryptedData.isEmpty) return;
             payloadToProcess = decryptedData;
           } else if (ttl > 1) {
-            _log.info('Forwarding relay message $msgId to $targetId (TTL: $ttl)');
+            _log.info(
+              'Forwarding relay message $msgId to $targetId (TTL: $ttl)',
+            );
+
+            // Drop Breadcrumb
+            _pendingAcks[cacheKey] = PendingAck(directSenderId, DateTime.now());
+
             fullData[10] = ttl - 1;
             _forwardRelayPayload(fullData, targetId, directSenderId);
             return;
@@ -130,7 +157,8 @@ class MessageHandler {
 
         await IsarService().putMessage(message);
         _log.info(
-            'Decrypted and saved message from $originSenderId (Type: $innerType)');
+          'Decrypted and saved message from $originSenderId (Type: $innerType)',
+        );
       } catch (e) {
         _log.severe('Failed to decrypt or decode message: $e');
       }
@@ -138,7 +166,10 @@ class MessageHandler {
   }
 
   static Future<void> _forwardRelayPayload(
-      Uint8List payload, int targetId, int excludeId) async {
+    Uint8List payload,
+    int targetId,
+    int excludeId,
+  ) async {
     final isar = IsarService();
     final neighbors = await isar.findActiveNeighbors(excludeId);
     if (neighbors.isEmpty) {
@@ -157,10 +188,19 @@ class MessageHandler {
       _log.info('Using Directed Beam routing to $targetId');
       neighbors.sort((a, b) {
         if (a.latitude == null || b.latitude == null) return 0;
-        return GeoUtils.calculateDistance(a.latitude!, a.longitude!,
-                targetDevice.latitude!, targetDevice.longitude!)
-            .compareTo(GeoUtils.calculateDistance(b.latitude!, b.longitude!,
-                targetDevice.latitude!, targetDevice.longitude!));
+        return GeoUtils.calculateDistance(
+          a.latitude!,
+          a.longitude!,
+          targetDevice.latitude!,
+          targetDevice.longitude!,
+        ).compareTo(
+          GeoUtils.calculateDistance(
+            b.latitude!,
+            b.longitude!,
+            targetDevice.latitude!,
+            targetDevice.longitude!,
+          ),
+        );
       });
       selected = neighbors.take(3).toList();
     } else {
@@ -175,14 +215,17 @@ class MessageHandler {
   }
 
   static Future<void> _pushToNeighbor(
-      FoundDevice neighbor, Uint8List payload) async {
+    FoundDevice neighbor,
+    Uint8List payload,
+  ) async {
     final device = BluetoothDevice.fromId(neighbor.remoteId);
     try {
       _log.info('Relaying to ${neighbor.stableId}...');
       await device.connect(
-          timeout: const Duration(seconds: 15),
-          autoConnect: false,
-          license: License.free);
+        timeout: const Duration(seconds: 15),
+        autoConnect: false,
+        license: License.free,
+      );
 
       if (Platform.isAndroid) {
         try {
@@ -190,8 +233,10 @@ class MessageHandler {
         } catch (_) {}
       }
 
-      final mtu = await device.mtu.first
-          .timeout(const Duration(seconds: 3), onTimeout: () => 23);
+      final mtu = await device.mtu.first.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 23,
+      );
       final maxChunkSize = (mtu - 10).clamp(20, 500);
 
       final services = await device.discoverServices();
@@ -246,6 +291,7 @@ class MessageHandler {
     required String content,
     bool isImage = false,
     Uint8List? imageData,
+    int? messageId,
   }) async {
     try {
       final isar = IsarService();
@@ -258,7 +304,8 @@ class MessageHandler {
         ..timestamp = DateTime.now()
         ..isReceived = false
         ..isImage = isImage
-        ..data = imageData;
+        ..data = imageData
+        ..messageId = messageId;
 
       await isar.putMessage(message);
       _log.info('Saved outgoing message to $receiverStableId');
@@ -268,7 +315,9 @@ class MessageHandler {
   }
 
   static Future<Uint8List> _encryptMessage(
-      Uint8List cleartext, Uint8List theirPubKey) async {
+    Uint8List cleartext,
+    Uint8List theirPubKey,
+  ) async {
     final myKeyPair = await ProfileManager.getKeyPair();
     final sharedSecret = await _exchangeAlgorithm.sharedSecretKey(
       keyPair: myKeyPair,
@@ -287,7 +336,9 @@ class MessageHandler {
   }
 
   static Future<Uint8List?> _decryptMessage(
-      int senderStableId, Uint8List encryptedData) async {
+    int senderStableId,
+    Uint8List encryptedData,
+  ) async {
     if (encryptedData.length < 28) return null;
 
     final isar = IsarService();
@@ -304,8 +355,10 @@ class MessageHandler {
     final myKeyPair = await ProfileManager.getKeyPair();
     final sharedSecret = await _exchangeAlgorithm.sharedSecretKey(
       keyPair: myKeyPair,
-      remotePublicKey:
-          SimplePublicKey(device.publicKey!, type: KeyPairType.x25519),
+      remotePublicKey: SimplePublicKey(
+        device.publicKey!,
+        type: KeyPairType.x25519,
+      ),
     );
 
     final secretKey = await sharedSecret.extract();
@@ -360,8 +413,11 @@ class MessageHandler {
     Uint8List? image,
     int ttl = 10,
   }) async {
-    final encrypted =
-        await getEncryptedPayload(targetStableId, text: text, image: image);
+    final encrypted = await getEncryptedPayload(
+      targetStableId,
+      text: text,
+      image: image,
+    );
     if (encrypted == null) return null;
 
     final myId = await ProfileManager.getStableDeviceId();
@@ -388,9 +444,10 @@ class MessageHandler {
     try {
       _log.info('Connecting to $targetStableId to push profile picture...');
       await device.connect(
-          timeout: const Duration(seconds: 15),
-          autoConnect: false,
-          license: License.free);
+        timeout: const Duration(seconds: 15),
+        autoConnect: false,
+        license: License.free,
+      );
 
       // --- MTU Negotiation Start ---
       if (Platform.isAndroid) {
@@ -401,8 +458,10 @@ class MessageHandler {
         }
       }
 
-      final mtu = await device.mtu.first
-          .timeout(const Duration(seconds: 3), onTimeout: () => 23);
+      final mtu = await device.mtu.first.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 23,
+      );
       final maxChunkSize = (mtu - 10).clamp(20, 500);
       _log.info('Negotiated MTU: $mtu, Chunk size: $maxChunkSize');
       // --- MTU Negotiation End ---
