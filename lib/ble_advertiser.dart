@@ -41,8 +41,10 @@ class BLEAdvertiser {
 
   static bool get initialized => _initialized;
   static bool get hasInboundConnections => _connectedDevices.isNotEmpty;
-  static bool isDeviceConnected(String deviceId) => _connectedDevices.contains(deviceId);
-  static Stream<Map<String, bool>> get connectionStream => _connectionController.stream;
+  static bool isDeviceConnected(String deviceId) =>
+      _connectedDevices.contains(deviceId);
+  static Stream<Map<String, bool>> get connectionStream =>
+      _connectionController.stream;
 
   static Future<void> sendNotification({
     required String characteristicUuid,
@@ -159,7 +161,9 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setConnectionStateChangeCallback((deviceId, connected) {
-      _log.info('Connection State Change | Device: $deviceId | Connected: $connected');
+      _log.info(
+        'Connection State Change | Device: $deviceId | Connected: $connected',
+      );
       if (connected) {
         _connectedDevices.add(deviceId);
       } else {
@@ -195,40 +199,43 @@ class BLEAdvertiser {
 
             final isar = IsarService();
             if (isar.isOpen) {
-              isar.findDeviceByRemoteId(deviceId).then((device) async {
-                if (device != null) {
-                  _log.info(
-                    'Processing Message from ${device.stableId} (Remote: $deviceId)',
-                  );
-                  MessageHandler.handleIncomingMessage(
-                    senderStableId: device.stableId,
-                    data: value,
-                  );
-                } else {
-                  // Unknown device connected (likely non-advertising like a Chromebook)
-                  // Create a placeholder record so we can at least receive and reassemble chunks.
-                  // We'll use a temporary stableId based on the MAC hash until it identifies itself.
-                  final tempId = deviceId.hashCode.abs();
-                  _log.info(
-                    'Unknown device $deviceId connected. Creating placeholder ID: $tempId',
-                  );
+              isar
+                  .findDeviceByRemoteId(deviceId)
+                  .then((device) async {
+                    if (device != null) {
+                      _log.info(
+                        'Processing Message from ${device.stableId} (Remote: $deviceId)',
+                      );
+                      MessageHandler.handleIncomingMessage(
+                        senderStableId: device.stableId,
+                        data: value,
+                      );
+                    } else {
+                      // Unknown device connected (likely non-advertising like a Chromebook)
+                      // Create a placeholder record so we can at least receive and reassemble chunks.
+                      // We'll use a temporary stableId based on the MAC hash until it identifies itself.
+                      final tempId = deviceId.hashCode.abs();
+                      _log.info(
+                        'Unknown device $deviceId connected. Creating placeholder ID: $tempId',
+                      );
 
-                  final placeholder = FoundDevice()
-                    ..remoteId = deviceId
-                    ..stableId = tempId
-                    ..name = "Connecting Device..."
-                    ..lastSeen = DateTime.now();
+                      final placeholder = FoundDevice()
+                        ..remoteId = deviceId
+                        ..stableId = tempId
+                        ..name = "Connecting Device..."
+                        ..lastSeen = DateTime.now();
 
-                  await isar.putFoundDevice(placeholder);
+                      await isar.putFoundDevice(placeholder);
 
-                  MessageHandler.handleIncomingMessage(
-                    senderStableId: tempId,
-                    data: value,
-                  );
-                }
-              }).catchError((e) {
-                _log.severe('Error handling message from $deviceId: $e');
-              });
+                      MessageHandler.handleIncomingMessage(
+                        senderStableId: tempId,
+                        data: value,
+                      );
+                    }
+                  })
+                  .catchError((e) {
+                    _log.severe('Error handling message from $deviceId: $e');
+                  });
             } else {
               _log.warning('Message Write Error: Isar DB is closed');
             }

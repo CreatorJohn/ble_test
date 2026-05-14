@@ -90,11 +90,14 @@ void onStart(ServiceInstance service) async {
 
   // Initialize BLE stack immediately so we can receive inbound connections
   // even before we start advertising.
-  advertiser.initialize(ignorePermissions: true).then((_) {
-    log.info('BLEAdvertiser initialized in background isolate');
-  }).catchError((e) {
-    log.warning('BLEAdvertiser early initialization failed: $e');
-  });
+  advertiser
+      .initialize(ignorePermissions: true)
+      .then((_) {
+        log.info('BLEAdvertiser initialized in background isolate');
+      })
+      .catchError((e) {
+        log.warning('BLEAdvertiser early initialization failed: $e');
+      });
 
   // Catch unhandled errors in the background isolate
   runZonedGuarded(
@@ -127,7 +130,9 @@ Future<void> _startServiceLogic(
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
 
-    if (isAdUpdating || isScanOperationInProgress || BLEAdvertiser.hasInboundConnections) {
+    if (isAdUpdating ||
+        isScanOperationInProgress ||
+        BLEAdvertiser.hasInboundConnections) {
       // Already in cooldown, scanning, or being accessed by neighbor
       needsTrailingUpdate = true;
       return;
@@ -352,13 +357,17 @@ Future<void> _startServiceLogic(
     // If a neighbor is connected to us, defer scan to avoid dropping their connection
     int deferCount = 0;
     while (BLEAdvertiser.hasInboundConnections && deferCount < 6) {
-      log.info('Inbound connection active, deferring scan (attempt ${deferCount + 1}/6)...');
+      log.info(
+        'Inbound connection active, deferring scan (attempt ${deferCount + 1}/6)...',
+      );
       await Future.delayed(const Duration(seconds: 5));
       deferCount++;
     }
 
     if (BLEAdvertiser.hasInboundConnections) {
-      log.warning('Inbound connection still active after 30s, skipping this scan cycle.');
+      log.warning(
+        'Inbound connection still active after 30s, skipping this scan cycle.',
+      );
       return;
     }
 
@@ -381,10 +390,12 @@ Future<void> _startServiceLogic(
           .or()
           .nameEqualTo("Connecting Device...")
           .findAll();
-      
+
       for (final dev in needsSync) {
         if (!syncQueue.containsKey(dev.stableId)) {
-          log.info('Adding placeholder ${dev.stableId} (${dev.remoteId}) to sync queue');
+          log.info(
+            'Adding placeholder ${dev.stableId} (${dev.remoteId}) to sync queue',
+          );
           syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
         }
       }
@@ -436,8 +447,8 @@ Future<void> _startServiceLogic(
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
       log.info('BLE scan complete.');
 
-      // Wait 2 seconds for stack to cool down after scan
-      await Future.delayed(const Duration(seconds: 2));
+      // Wait 1 second for stack to cool down after scan
+      await Future.delayed(const Duration(seconds: 1));
 
       if (syncQueue.isNotEmpty) {
         log.info('Processing sync queue (${syncQueue.length} devices)...');
@@ -664,7 +675,7 @@ Future<void> _fetchFullMetadata(
     }
 
     if (picChar != null) {
-       // ... existing code ...
+      // ... existing code ...
     }
 
     if (messageChar != null) {
@@ -673,7 +684,9 @@ Future<void> _fetchFullMetadata(
         await messageChar.setNotifyValue(true);
         messageChar.onValueReceived.listen((value) {
           if (value.isNotEmpty) {
-            log.info('Received notification chunk from $stableId (${value.length} bytes)');
+            log.info(
+              'Received notification chunk from $stableId (${value.length} bytes)',
+            );
             MessageHandler.handleIncomingMessage(
               senderStableId: stableId,
               data: value,
@@ -698,8 +711,12 @@ Future<void> _fetchFullMetadata(
           .findFirst();
 
       if (existing != null) {
-        log.info('Comparing hashes for $stableId: Local=${existing.profileHash}, Remote=$hashHex');
-        log.info('Local picture status for $stableId: ${existing.profilePicture == null ? "MISSING" : "Present (${existing.profilePicture!.length} bytes)"}');
+        log.info(
+          'Comparing hashes for $stableId: Local=${existing.profileHash}, Remote=$hashHex',
+        );
+        log.info(
+          'Local picture status for $stableId: ${existing.profilePicture == null ? "MISSING" : "Present (${existing.profilePicture!.length} bytes)"}',
+        );
 
         bool hashMismatched = existing.profileHash != hashHex;
         bool pictureMissing = existing.profilePicture == null;
@@ -745,9 +762,7 @@ Future<void> _fetchFullMetadata(
             await picChar.write([0x01], withoutResponse: false);
 
             log.info('Waiting for profile picture chunks from $stableId...');
-            await syncCompleter.future.timeout(
-              const Duration(seconds: 15),
-            );
+            await syncCompleter.future.timeout(const Duration(seconds: 15));
           } catch (e) {
             log.info(
               'Push sync failed or timed out ($e), falling back to direct GATT read...',
@@ -778,23 +793,25 @@ Future<void> _fetchFullMetadata(
         } else if (picChar == null) {
           log.warning('Profile picture characteristic NOT FOUND for $stableId');
         } else {
-          log.info('Sync not needed for $stableId: Hash matches and picture exists');
+          log.info(
+            'Sync not needed for $stableId: Hash matches and picture exists',
+          );
         }
 
         if (locChar != null) {
           log.info('Syncing location for $stableId...');
           final locBytes = await robustRead(locChar);
           if (locBytes.length == 6) {
-             final decodedLat = MeshPacketEncoder.decodeCoordinate(
-                (locBytes[0] << 16) | (locBytes[1] << 8) | locBytes[2],
-                true,
-              );
-              final decodedLon = MeshPacketEncoder.decodeCoordinate(
-                (locBytes[3] << 16) | (locBytes[4] << 8) | locBytes[5],
-                false,
-              );
-              existing.latitude = decodedLat;
-              existing.longitude = decodedLon;
+            final decodedLat = MeshPacketEncoder.decodeCoordinate(
+              (locBytes[0] << 16) | (locBytes[1] << 8) | locBytes[2],
+              true,
+            );
+            final decodedLon = MeshPacketEncoder.decodeCoordinate(
+              (locBytes[3] << 16) | (locBytes[4] << 8) | locBytes[5],
+              false,
+            );
+            existing.latitude = decodedLat;
+            existing.longitude = decodedLon;
           }
         }
 
@@ -813,12 +830,16 @@ Future<void> _fetchFullMetadata(
           latest.lastPictureSync = existing.lastPictureSync;
           await isar.putFoundDevice(latest);
         } else {
-          log.warning('Device $stableId vanished during sync, saving current state');
+          log.warning(
+            'Device $stableId vanished during sync, saving current state',
+          );
           await isar.putFoundDevice(existing);
         }
         log.info('Metadata sync complete for $stableId');
       } else {
-        log.warning('Device $stableId not found in Isar, skipping metadata sync');
+        log.warning(
+          'Device $stableId not found in Isar, skipping metadata sync',
+        );
       }
     }
   } catch (e) {

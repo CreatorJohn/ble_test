@@ -94,8 +94,9 @@ class MessagesScreen extends ConsumerWidget {
                           ? Icon(
                               msg.isDelivered ? Icons.done_all : Icons.check,
                               size: 16,
-                              color:
-                                  msg.isDelivered ? Colors.blue : Colors.grey,
+                              color: msg.isDelivered
+                                  ? Colors.blue
+                                  : Colors.grey,
                             )
                           : null,
                     );

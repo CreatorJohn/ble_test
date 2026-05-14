@@ -222,27 +222,13 @@ class DiscoveryScreen extends ConsumerWidget {
                                     message: "Metadata sync pending",
                                     child: Icon(
                                       Icons.sync_problem,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .secondary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.secondary,
                                       size: 20,
                                     ),
                                   ),
                                 ),
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    "${item.rssi} dBm",
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  const Icon(
-                                    Icons.signal_cellular_alt,
-                                    size: 16,
-                                  ),
-                                ],
-                              ),
                               IconButton(
                                 icon: const Icon(Icons.info_outline),
                                 tooltip: "View Profile",
@@ -300,8 +286,9 @@ class DiscoveryScreen extends ConsumerWidget {
             _ProfileInfo(label: "MAC Address", value: device.remoteId),
             _ProfileInfo(
               label: "Last Seen",
-              value: DateFormat('dd.MM.yyyy HH:mm:ss')
-                  .format(device.lastSeen.toLocal()),
+              value: DateFormat(
+                'dd.MM.yyyy HH:mm:ss',
+              ).format(device.lastSeen.toLocal()),
             ),
             if (device.profileHash != null)
               _ProfileInfo(label: "Profile Hash", value: device.profileHash!),

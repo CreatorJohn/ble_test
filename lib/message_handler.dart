@@ -79,9 +79,12 @@ class MessageHandler {
           // Identity Linking: If this message came directly from the origin,
           // ensure we have their remoteId (MAC) mapped to their stableId.
           // This is critical for non-advertising devices like Chromebooks.
-          if (ttl == 10 || ttl == 5) { // Common starting TTLs
-             _log.info('Possible direct connection from $originSenderId. Linking identity...');
-             _linkIdentity(directSenderId, originSenderId);
+          if (ttl == 10 || ttl == 5) {
+            // Common starting TTLs
+            _log.info(
+              'Possible direct connection from $originSenderId. Linking identity...',
+            );
+            _linkIdentity(directSenderId, originSenderId);
           }
 
           // Cache key: OriginSenderId (32-bit) + MsgId (8-bit)
@@ -136,20 +139,26 @@ class MessageHandler {
         final payload = payloadToProcess.sublist(1);
 
         if (innerType == typeProfilePic) {
-          _log.info('Received profile picture payload (${payload.length} bytes) from $originSenderId');
+          _log.info(
+            'Received profile picture payload (${payload.length} bytes) from $originSenderId',
+          );
           final isar = IsarService();
           final device = await isar.db.foundDevices
               .where()
               .stableIdEqualTo(originSenderId)
               .findFirst();
           if (device != null) {
-            _log.info('Updating Isar record for device $originSenderId with new profile picture');
+            _log.info(
+              'Updating Isar record for device $originSenderId with new profile picture',
+            );
             device.profilePicture = payload;
             device.lastPictureSync = DateTime.now();
             await isar.putFoundDevice(device);
             _log.info('Isar record updated successfully for $originSenderId');
           } else {
-            _log.warning('Received profile picture for unknown device $originSenderId');
+            _log.warning(
+              'Received profile picture for unknown device $originSenderId',
+            );
           }
           return;
         }
@@ -643,7 +652,11 @@ class MessageHandler {
     }
   }
 
-  static Future<void> _pushAck(int targetNodeId, int originId, int msgId) async {
+  static Future<void> _pushAck(
+    int targetNodeId,
+    int originId,
+    int msgId,
+  ) async {
     final isar = IsarService();
     final neighbor = await isar.db.foundDevices
         .where()
@@ -691,7 +704,9 @@ class MessageHandler {
       });
     } else {
       // Create new permanent record with this MAC
-      _log.info('Creating new ID record for $originId with MAC ${placeholder.remoteId}');
+      _log.info(
+        'Creating new ID record for $originId with MAC ${placeholder.remoteId}',
+      );
       final newRecord = FoundDevice()
         ..stableId = originId
         ..remoteId = placeholder.remoteId
