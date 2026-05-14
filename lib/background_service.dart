@@ -614,29 +614,56 @@ Future<void> _fetchFullMetadata(
         }
 
         if (picChar != null && (pictureMissing || hashMismatched)) {
-          log.info('CONDITION MET: Requesting profile picture sync from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)');
-          
+          log.info(
+            'CONDITION MET: Requesting profile picture sync from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)',
+          );
+
           final syncCompleter = Completer<void>();
-          final subscription = ChunkedTransferManager.onPayloadComplete.listen((event) {
+          final subscription = ChunkedTransferManager.onPayloadComplete.listen((
+            event,
+          ) {
             if (event['senderStableId'] == stableId) {
               final payload = event['payload'] as Uint8List;
-              if (payload.isNotEmpty && payload[0] == MessageHandler.typeRelay) {
-                // Peek at inner type if possible, or just assume it's our pic
+              // MessageHandler.typeRelay (0x04) is the wrapper for mesh payloads
+              if (payload.isNotEmpty && payload[0] == 0x04) {
                 syncCompleter.complete();
               }
             }
           });
 
           try {
-            // Using withoutResponse: false (reliable write) ensures the ping is
-            // processed before we attempt the next read, preventing GATT_FAILURE 257.
+            log.info('Attempting push-style sync from $stableId...');
+            // Trigger push from neighbor
             await picChar.write([0x01], withoutResponse: false);
-            
+
             log.info('Waiting for profile picture chunks from $stableId...');
             await syncCompleter.future.timeout(
-              const Duration(seconds: 30),
-              onTimeout: () => log.warning('Timeout waiting for profile picture from $stableId'),
+              const Duration(seconds: 15),
             );
+          } catch (e) {
+            log.info(
+              'Push sync failed or timed out ($e), falling back to direct GATT read...',
+            );
+            try {
+              // Direct read fallback for non-advertising or legacy devices
+              final bytes = await picChar.read().timeout(
+                const Duration(seconds: 30),
+              );
+              if (bytes.isNotEmpty) {
+                log.info('Direct read successful: ${bytes.length} bytes');
+                // Re-fetch existing to update with new picture
+                final current = await isar.db.foundDevices
+                    .where()
+                    .stableIdEqualTo(stableId)
+                    .findFirst();
+                if (current != null) {
+                  current.profilePicture = Uint8List.fromList(bytes);
+                  await isar.putFoundDevice(current);
+                }
+              }
+            } catch (readErr) {
+              log.warning('Direct read fallback also failed: $readErr');
+            }
           } finally {
             await subscription.cancel();
           }
