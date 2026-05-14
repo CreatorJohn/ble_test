@@ -52,6 +52,10 @@ class AdvertisingName extends _$AdvertisingName {
     state = AsyncData(trimmed);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storageKey, trimmed);
+    
+    // Refresh GATT characteristics first
+    FlutterBackgroundService().invoke("updateLocalProfile");
+    // Then start/update advertising
     FlutterBackgroundService().invoke("startAdvertising", {"name": trimmed});
   }
 
