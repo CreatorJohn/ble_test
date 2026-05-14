@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:ble_test/ble_advertiser.dart';
+import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
@@ -560,11 +561,31 @@ Future<void> _fetchFullMetadata(
 
         if (picChar != null && (pictureMissing || hashMismatched)) {
           log.info('CONDITION MET: Requesting profile picture sync from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)');
-          // Using withoutResponse: false (reliable write) ensures the ping is
-          // processed before we attempt the next read, preventing GATT_FAILURE 257.
-          await picChar.write([0x01], withoutResponse: false);
-          // Small stabilization delay for Android BLE stack
-          await Future.delayed(const Duration(milliseconds: 200));
+          
+          final syncCompleter = Completer<void>();
+          final subscription = ChunkedTransferManager.onPayloadComplete.listen((event) {
+            if (event['senderStableId'] == stableId) {
+              final payload = event['payload'] as Uint8List;
+              if (payload.isNotEmpty && payload[0] == MessageHandler.typeRelay) {
+                // Peek at inner type if possible, or just assume it's our pic
+                syncCompleter.complete();
+              }
+            }
+          });
+
+          try {
+            // Using withoutResponse: false (reliable write) ensures the ping is
+            // processed before we attempt the next read, preventing GATT_FAILURE 257.
+            await picChar.write([0x01], withoutResponse: false);
+            
+            log.info('Waiting for profile picture chunks from $stableId...');
+            await syncCompleter.future.timeout(
+              const Duration(seconds: 30),
+              onTimeout: () => log.warning('Timeout waiting for profile picture from $stableId'),
+            );
+          } finally {
+            await subscription.cancel();
+          }
         } else if (picChar == null) {
           log.warning('Profile picture characteristic NOT FOUND for $stableId');
         } else {
