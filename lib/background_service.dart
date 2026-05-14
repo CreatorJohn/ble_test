@@ -436,6 +436,9 @@ Future<void> _startServiceLogic(
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
       log.info('BLE scan complete.');
 
+      // Wait 2 seconds for stack to cool down after scan
+      await Future.delayed(const Duration(seconds: 2));
+
       if (syncQueue.isNotEmpty) {
         log.info('Processing sync queue (${syncQueue.length} devices)...');
         for (final entry in syncQueue.entries) {
@@ -549,19 +552,37 @@ Future<void> _fetchFullMetadata(
       await Future.delayed(const Duration(milliseconds: 1000));
     } catch (_) {}
 
-    log.info('Connecting to $stableId to fetch metadata...');
-    try {
-      await device.connect(
-        autoConnect: false,
-        license: License.free,
-        timeout: const Duration(seconds: 20),
+    int attempts = 0;
+    bool connected = false;
+
+    while (attempts < 3 && !connected) {
+      attempts++;
+      log.info(
+        'Connecting to $stableId to fetch metadata (Attempt $attempts/3)...',
       );
-      log.info('Connected to $stableId');
-    } catch (e) {
-      if (e.toString().contains('already_connected')) {
-        log.info('Already connected to $stableId');
-      } else {
-        rethrow;
+      try {
+        await device.connect(
+          autoConnect: false,
+          license: License.free,
+          timeout: const Duration(seconds: 20),
+        );
+        connected = true;
+        log.info('Connected to $stableId');
+      } catch (e) {
+        final errorStr = e.toString();
+        if (errorStr.contains('already_connected')) {
+          connected = true;
+          log.info('Already connected to $stableId');
+        } else if (errorStr.contains('257') ||
+            errorStr.contains('FAILURE_REGISTERING_CLIENT')) {
+          log.warning(
+            'Received error 257 (Register Client Fail). Cooling down 2s...',
+          );
+          await Future.delayed(const Duration(seconds: 2));
+          if (attempts >= 3) rethrow;
+        } else {
+          rethrow;
+        }
       }
     }
 
