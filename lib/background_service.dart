@@ -18,8 +18,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
+  final serviceRunning = await service.isRunning();
 
-  if (await service.isRunning()) return;
+  if (serviceRunning) {
+    log.warning("Service is already running");
+    return;
+  }
 
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'scanning_status',
