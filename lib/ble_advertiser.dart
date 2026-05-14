@@ -152,6 +152,12 @@ class BLEAdvertiser {
       try {
         if (charUuidLower == messageCharUuid.toLowerCase()) {
           if (value != null) {
+            if (value.isNotEmpty && value[0] == 0x05 && value.length == 10) {
+              // It's a raw ACK packet, skip ChunkedTransferManager
+              MessageHandler.handleIncomingAck(value);
+              return WriteRequestResult(status: 0);
+            }
+
             final isar = IsarService();
             if (isar.isOpen) {
               isar

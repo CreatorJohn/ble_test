@@ -539,6 +539,48 @@ class MessageHandler {
     }
   }
 
+  static Future<void> handleIncomingAck(Uint8List ackPayload) async {
+    final buffer = ByteData.view(ackPayload.buffer);
+    final targetId = buffer.getUint32(1, Endian.big);
+    final originId = buffer.getUint32(5, Endian.big);
+    final msgId = ackPayload[9];
+
+    final myId = await ProfileManager.getStableDeviceId();
+
+    if (targetId != myId) {
+      return; // Not meant for us to relay
+    }
+
+    if (originId == myId) {
+      // We are the original sender! Message delivered.
+      _log.info('Message $msgId was delivered successfully!');
+      final isar = IsarService();
+      final msg = await isar.db.messages
+          .filter()
+          .messageIdEqualTo(msgId)
+          .findFirst();
+      if (msg != null && !msg.isDelivered) {
+        msg.isDelivered = true;
+        await isar.putMessage(msg);
+      }
+      return;
+    }
+
+    // We are a relay. Look up breadcrumb.
+    final cacheKey = (originId << 8) | msgId;
+    final pendingAck = _pendingAcks[cacheKey];
+
+    if (pendingAck != null) {
+      _log.info(
+        'Relaying ACK for $msgId to upstream node ${pendingAck.upstreamNodeId}',
+      );
+      _pushAck(pendingAck.upstreamNodeId, originId, msgId);
+      _pendingAcks.remove(cacheKey); // First ACK wins
+    } else {
+      _log.info('Dropped orphan ACK for $msgId');
+    }
+  }
+
   static Future<void> _pushAck(int targetNodeId, int originId, int msgId) async {
     final isar = IsarService();
     final neighbor = await isar.db.foundDevices
