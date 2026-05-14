@@ -63,7 +63,8 @@ class MessagesScreen extends ConsumerWidget {
                                 const Text("[Image Received]"),
                                 const SizedBox(height: 4),
                                 GestureDetector(
-                                  onTap: () => _showFullImage(context, msg.data!),
+                                  onTap: () =>
+                                      _showFullImage(context, msg.data!),
                                   child: Container(
                                     height: 150,
                                     width: 150,
@@ -71,7 +72,8 @@ class MessagesScreen extends ConsumerWidget {
                                       borderRadius: BorderRadius.circular(8),
                                       image: DecorationImage(
                                         image: MemoryImage(
-                                            Uint8List.fromList(msg.data!)),
+                                          Uint8List.fromList(msg.data!),
+                                        ),
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -88,6 +90,14 @@ class MessagesScreen extends ConsumerWidget {
                         isReceived ? Icons.call_received : Icons.call_made,
                         color: isReceived ? Colors.green : Colors.blue,
                       ),
+                      trailing: !isReceived
+                          ? Icon(
+                              msg.isDelivered ? Icons.done_all : Icons.check,
+                              size: 16,
+                              color:
+                                  msg.isDelivered ? Colors.blue : Colors.grey,
+                            )
+                          : null,
                     );
                   },
                 );
