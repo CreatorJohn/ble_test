@@ -529,6 +529,11 @@ Future<void> _startServiceLogic(
     service.invoke("advertisingChange", {"active": false});
     await advertiser.stopAdvertising();
   });
+
+  service.on("updateLocalProfile").listen((_) async {
+    log.info("Local profile change detected, updating characteristics...");
+    updateAd();
+  });
 }
 
 Future<void> _fetchFullMetadata(
