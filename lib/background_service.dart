@@ -181,7 +181,7 @@ Future<void> _startServiceLogic(
   MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
-  final Set<int> activeSyncIds = {};
+  final Map<int, BluetoothDevice> syncQueue = {};
   final Map<int, DateTime> lastSyncAttempt = {};
 
   FlutterBluePlus.scanResults.listen((results) async {
@@ -310,19 +310,8 @@ Future<void> _startServiceLogic(
               lastAttempt != null &&
               DateTime.now().difference(lastAttempt).inMinutes < 5;
 
-          if (!activeSyncIds.contains(stableId) && !isCooldownActive) {
-            activeSyncIds.add(stableId);
-            lastSyncAttempt[stableId] = DateTime.now();
-            log.info(
-              'Syncing metadata for $stableId (Reason: ${existing == null ? "New" : "Stale/Changed"})',
-            );
-            _fetchFullMetadata(result.device, isarService, stableId, log)
-                .then((_) {
-                  activeSyncIds.remove(stableId);
-                })
-                .catchError((e) {
-                  activeSyncIds.remove(stableId);
-                });
+          if (!isCooldownActive) {
+            syncQueue[stableId] = result.device;
           }
         }
       } catch (e) {
@@ -384,7 +373,21 @@ Future<void> _startServiceLogic(
         androidScanMode: AndroidScanMode.lowPower,
         oneByOne: true, // More reliable for background/low-memory
       );
-      log.info('BLE scan started successfully');
+      log.info('BLE scan complete.');
+
+      if (syncQueue.isNotEmpty) {
+        log.info('Processing sync queue (${syncQueue.length} devices)...');
+        for (final entry in syncQueue.entries) {
+          final id = entry.key;
+          final device = entry.value;
+
+          lastSyncAttempt[id] = DateTime.now();
+          log.info('Syncing metadata for $id...');
+          await _fetchFullMetadata(device, isarService, id, log);
+        }
+        syncQueue.clear();
+        log.info('Sync queue processed.');
+      }
     } catch (e) {
       log.severe('startSafeScan failed: $e');
       lastScanStartTime = null;
