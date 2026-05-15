@@ -761,20 +761,53 @@ Future<void> _fetchFullMetadata(
           );
 
           try {
-            log.info('Reading profile picture characteristic from $stableId...');
-            // Direct read for profile picture. Note: Large data handled by FBP long-read.
-            final bytes = await picChar.read().timeout(
-              const Duration(seconds: 45),
-            );
+            log.info('Enabling notifications and reading header from $stableId...');
             
-            if (bytes.isNotEmpty) {
-              log.info('Pull-style sync successful: ${bytes.length} bytes received from $stableId');
-              // Update record with new picture
-              existing.profilePicture = Uint8List.fromList(bytes);
-              // Save immediately to ensure it's not lost
-              await isar.putFoundDevice(existing);
-            } else {
-              log.warning('Read empty profile picture from $stableId');
+            // 1. Enable notifications first to catch chunks
+            await picChar.setNotifyValue(true);
+            
+            // 2. Read the header packet
+            final header = await picChar.read().timeout(const Duration(seconds: 10));
+            if (header.length < 5 || header[0] != 0xAA) {
+              throw Exception('Invalid profile header received: $header');
+            }
+            
+            final bd = ByteData.view(Uint8List.fromList(header).buffer);
+            final int totalExpectedBytes = bd.getUint16(1, Endian.big);
+            final int chunkCount = bd.getUint16(3, Endian.big);
+            
+            log.info('Expected profile pic: $totalExpectedBytes bytes in $chunkCount chunks from $stableId');
+            
+            final imageBuffer = <int>[];
+            final transferCompleter = Completer<void>();
+            
+            // 3. Listen for chunks
+            final sub = picChar.onValueReceived.listen((value) {
+              imageBuffer.addAll(value);
+              log.fine('Received profile chunk: ${imageBuffer.length}/$totalExpectedBytes');
+              if (imageBuffer.length >= totalExpectedBytes) {
+                if (!transferCompleter.isCompleted) transferCompleter.complete();
+              }
+            });
+
+            try {
+              // 4. Wait for transfer to complete
+              await transferCompleter.future.timeout(const Duration(seconds: 45));
+              
+              if (imageBuffer.length >= totalExpectedBytes) {
+                final finalBytes = Uint8List.fromList(imageBuffer.sublist(0, totalExpectedBytes));
+                log.info('Chunked profile download complete: ${finalBytes.length} bytes from $stableId');
+                
+                existing.profilePicture = finalBytes;
+                await isar.putFoundDevice(existing);
+              }
+            } catch (timeout) {
+              log.warning('Profile transfer timed out for $stableId. Received ${imageBuffer.length}/$totalExpectedBytes');
+            } finally {
+              await sub.cancel();
+              try {
+                await picChar.setNotifyValue(false);
+              } catch (_) {}
             }
           } catch (e) {
             log.warning('Failed to pull profile picture from $stableId: $e');

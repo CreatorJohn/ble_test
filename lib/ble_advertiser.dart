@@ -35,6 +35,8 @@ class BLEAdvertiser {
 
   static bool _isAdvertising = false;
   static bool _initialized = false;
+  static Uint8List? _currentProfilePic;
+  static Uint8List? _currentFullHash;
   static final Set<String> _connectedDevices = {};
   static final StreamController<Map<String, bool>> _connectionController =
       StreamController.broadcast();
@@ -261,16 +263,90 @@ class BLEAdvertiser {
       value,
     ) {
       try {
+        final charUuidLower = characteristicUuid.toLowerCase();
         _log.info(
-          'Read Request | Device: $deviceId | Char: ${characteristicUuid.toLowerCase()} | Offset: $offset',
+          'Read Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset',
         );
+
+        if (charUuidLower == profilePicCharUuid.toLowerCase() && offset == 0) {
+          _log.info('Profile Picture Read detected from $deviceId. Preparing stream...');
+          
+          // We handle the streaming asynchronously
+          _streamProfilePicture(deviceId);
+          
+          // Prepare header: [Magic(0xAA), Size (2 bytes), ChunkCount (2 bytes)]
+          final header = _getProfileHeaderSync();
+          if (header != null) {
+            return ReadRequestResult(value: header, status: 0);
+          }
+        }
       } catch (e) {
-        _log.severe('Error in setReadRequestCallback logging: $e');
+        _log.severe('Error in setReadRequestCallback: $e');
       }
       return null; // Return null to use the characteristic's current value
     });
 
     return true;
+  }
+
+  static Uint8List? _getProfileHeaderSync() {
+    // Note: This is synchronous to respond to GATT read immediately
+    if (_currentProfilePic == null || _currentProfilePic!.isEmpty) return null;
+    
+    final int size = _currentProfilePic!.length;
+    const int chunkSize = 200;
+    final int chunkCount = (size / chunkSize).ceil();
+    
+    final header = Uint8List(5);
+    header[0] = 0xAA; // Magic byte
+    final bd = ByteData.view(header.buffer);
+    bd.setUint16(1, size, Endian.big);
+    bd.setUint16(3, chunkCount, Endian.big);
+    
+    return header;
+  }
+
+  static Future<void> _streamProfilePicture(String deviceId) async {
+    try {
+      if (_currentProfilePic == null || _currentProfilePic!.isEmpty) {
+        _log.warning('Stream Profile Error: Local picture empty');
+        return;
+      }
+
+      final bytes = _currentProfilePic!;
+      const int chunkSize = 200;
+      final int totalSize = bytes.length;
+      
+      _log.info('Starting profile stream to $deviceId ($totalSize bytes)');
+      
+      // Wait for central to enable notifications and prepare
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      int offset = 0;
+      int chunkIdx = 0;
+      while (offset < totalSize) {
+        final end = (offset + chunkSize < totalSize) ? offset + chunkSize : totalSize;
+        final chunk = bytes.sublist(offset, end);
+        
+        _log.fine('Sending profile chunk ${chunkIdx + 1} (${chunk.length} bytes)');
+        
+        await BlePeripheral.updateCharacteristic(
+          characteristicId: profilePicCharUuid,
+          value: chunk,
+          deviceId: deviceId,
+        );
+
+        offset = end;
+        chunkIdx++;
+        
+        // Throttling to prevent buffer saturation on sensitive stacks (Chromebook)
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      
+      _log.info('Profile stream to $deviceId complete. Sent $chunkIdx chunks.');
+    } catch (e) {
+      _log.severe('Error during profile streaming: $e');
+    }
   }
 
   Stream<bool> get advertisingStatusStream =>
@@ -307,8 +383,8 @@ class BLEAdvertiser {
 
       await Future.delayed(const Duration(seconds: 1));
 
-      final profilePic = await ProfileManager.getProfilePicture();
-      final fullHash = await ProfileManager.getProfileHash();
+      _currentProfilePic = await ProfileManager.getProfilePicture();
+      _currentFullHash = await ProfileManager.getProfileHash();
       final stableId = await ProfileManager.getStableDeviceId();
       final keyPair = await ProfileManager.getKeyPair();
       final pubKey = await keyPair.extractPublicKey();
@@ -340,13 +416,13 @@ class BLEAdvertiser {
                 AttributePermissions.readable.index,
                 AttributePermissions.writeable.index,
               ],
-              value: profilePic ?? Uint8List.fromList([]),
+              value: _currentProfilePic ?? Uint8List.fromList([]),
             ),
             BleCharacteristic(
               uuid: fullHashCharUuid,
               properties: [CharacteristicProperties.read.index],
               permissions: [AttributePermissions.readable.index],
-              value: fullHash,
+              value: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
             ),
             BleCharacteristic(
               uuid: locationCharUuid,
@@ -374,7 +450,7 @@ class BLEAdvertiser {
 
       final mainPayload = MeshPacketEncoder.encodeMainPacket(
         stableId: stableId,
-        profileHash: fullHash,
+        profileHash: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
         isIOS: Platform.isIOS,
         isOnline: isOnline,
       );
@@ -383,7 +459,7 @@ class BLEAdvertiser {
           MeshPacketEncoder.encodeScanResponseManufacturerData(
             latitude: latitude,
             longitude: longitude,
-            profileHash: fullHash,
+            profileHash: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
           );
 
       _log.info('Starting BLE advertising...');
