@@ -17,8 +17,7 @@ import 'package:logging/logging.dart' show Logger;
 class BLEAdvertiser {
   static final Logger _log = Logger('BLEAdvertiser');
   static final BLEAdvertiser _instance = BLEAdvertiser._internal();
-  static final StreamController<bool> _advertisingStatusController =
-      StreamController.broadcast();
+  static final StreamController<bool> _advertisingStatusController = StreamController.broadcast();
 
   static const serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
   static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
@@ -28,476 +27,188 @@ class BLEAdvertiser {
   static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
   static const nameCharUuid = 'c3c4c5c6-d7d8-4321-8765-abcdefabcdef';
 
-  /// Maximum length for the display name in the scan response.
-  /// Calculated as: 31 (Total) - 16 (Mfg Data + Header) - 2 (Name Header) = 13
-  /// Note: The BLE peripheral plugin has been modified to put the name ONLY in scan response.
   static const int maxNameLength = 13;
 
-  static bool _isAdvertising = false;
-  static bool _initialized = false;
-  static Uint8List? _currentProfilePic;
-  static Uint8List? _currentFullHash;
+  static bool _initialized = false, _servicesAdded = false, _isAdvertising = false;
+  static Uint8List? _currentProfilePic, _currentFullHash, _currentPubKey;
+  static String? _currentName;
   static final Set<String> _connectedDevices = {};
   static final Map<String, int> _deviceMtu = {};
-  static final StreamController<Map<String, bool>> _connectionController =
-      StreamController.broadcast();
+  static final StreamController<Map<String, bool>> _connectionController = StreamController.broadcast();
 
   static bool get initialized => _initialized;
   static bool get hasInboundConnections => _connectedDevices.isNotEmpty;
-  static bool isDeviceConnected(String deviceId) =>
-      _connectedDevices.contains(deviceId);
+  static bool isDeviceConnected(String deviceId) => _connectedDevices.contains(deviceId);
   static int getMtuForDevice(String deviceId) => _deviceMtu[deviceId] ?? 23;
-  static Stream<Map<String, bool>> get connectionStream =>
-      _connectionController.stream;
-
-  static Future<void> sendNotification({
-    required String characteristicUuid,
-    required Uint8List value,
-    String? deviceId,
-  }) async {
-    try {
-      await BlePeripheral.updateCharacteristic(
-        characteristicId: characteristicUuid,
-        value: value,
-        deviceId: deviceId,
-      );
-    } catch (e) {
-      _log.warning('Failed to send notification: $e');
-    }
-  }
+  static Stream<Map<String, bool>> get connectionStream => _connectionController.stream;
 
   factory BLEAdvertiser() => _instance;
-
   BLEAdvertiser._internal();
 
-  Future<bool> _waitForBluetooth() async {
-    _log.info("Checking the bluetooth...");
-
-    BluetoothAdapterState state = FlutterBluePlus.adapterStateNow;
-    _log.info("Initial Bluetooth State: $state");
-
-    if (state == BluetoothAdapterState.on) {
-      _log.fine("Bluetooth is already ON");
-      return true;
-    }
-
-    if (state == BluetoothAdapterState.unknown) {
-      _log.info("Bluetooth state unknown, waiting for warm-up...");
-      await Future.delayed(const Duration(seconds: 3));
-      state = FlutterBluePlus.adapterStateNow;
-      if (state == BluetoothAdapterState.on) return true;
-    }
-
-    _log.info("Waiting for Bluetooth to reach ON state...");
+  static Future<void> sendNotification({required String characteristicUuid, required Uint8List value, String? deviceId}) async {
     try {
-      final newState = await FlutterBluePlus.adapterState
-          .where((s) => s == BluetoothAdapterState.on)
-          .first
-          .timeout(const Duration(seconds: 15));
-      _log.info("Bluetooth state reached: $newState");
-      return true;
-    } catch (_) {
-      final finalState = FlutterBluePlus.adapterStateNow;
-      _log.warning(
-        "Bluetooth remains in state: $finalState after timeout. Continuing anyway for stack resilience.",
-      );
-      return true;
-    }
+      if (!_initialized) return;
+      await BlePeripheral.updateCharacteristic(characteristicId: characteristicUuid, value: value, deviceId: deviceId);
+    } catch (e) { _log.warning('Notify fail: $e'); }
   }
 
   Future<bool> initialize({bool ignorePermissions = false}) async {
     if (_initialized) return true;
     _initialized = true;
-
-    _log.info('Initializing BLEAdvertiser: Requesting permissions first');
     if ((Platform.isAndroid || Platform.isIOS) && !ignorePermissions) {
-      await [
-        Permission.bluetoothScan,
-        Permission.bluetoothAdvertise,
-        Permission.bluetoothConnect,
-        Permission.location,
-        Permission.locationWhenInUse,
-      ].request();
+      await [Permission.bluetoothScan, Permission.bluetoothAdvertise, Permission.bluetoothConnect, Permission.location, Permission.locationWhenInUse].request();
     }
-
     if (Platform.isAndroid || Platform.isIOS) {
       await _waitForBluetooth();
-      // Give the system a moment to settle after Bluetooth turns ON
       await Future.delayed(const Duration(seconds: 1));
     }
+    try { await BlePeripheral.initialize(); } catch (e) { _log.warning('Init fail: $e'); }
 
-    try {
-      if (Platform.isAndroid ||
-          Platform.isIOS ||
-          Platform.isMacOS ||
-          Platform.isWindows) {
-        _log.info('Calling BlePeripheral.initialize()...');
-        try {
-          await BlePeripheral.initialize();
-        } catch (e) {
-          if (e.toString().contains('gattServer is null')) {
-            _log.warning('GATT server null, retrying initialize in 3s...');
-            await Future.delayed(const Duration(seconds: 3));
-            await BlePeripheral.initialize();
-          } else {
-            rethrow;
+    BlePeripheral.setAdvertisingStatusUpdateCallback((isAd, err) { 
+      _isAdvertising = isAd; 
+      _advertisingStatusController.add(isAd); 
+    });
+    BlePeripheral.setConnectionStateChangeCallback((id, conn) {
+      _log.info('Connection Change | $id | Connected: $conn');
+      if (conn) {
+        _connectedDevices.add(id); 
+      } else { 
+        _connectedDevices.remove(id); 
+        _deviceMtu.remove(id); 
+      }
+      _connectionController.add({id: conn});
+    });
+    BlePeripheral.setMtuChangeCallback((id, mtu) => _deviceMtu[id] = mtu);
+
+    BlePeripheral.setWriteRequestCallback((id, char, offset, val) {
+      final charLower = char.toLowerCase();
+      try {
+        if (charLower == messageCharUuid.toLowerCase() && val != null) {
+          if (val.isNotEmpty && val[0] == 0x05 && val.length == 10) { 
+            MessageHandler.handleIncomingAck(val); 
+            return WriteRequestResult(status: 0); 
+          }
+          final isar = IsarService();
+          if (isar.isOpen) {
+            isar.findDeviceByRemoteId(id).then((dev) async {
+              if (dev != null) { 
+                MessageHandler.handleIncomingMessage(senderStableId: dev.stableId, data: val); 
+              } else {
+                final tempId = id.hashCode.abs();
+                final placeholder = FoundDevice()..remoteId = id..stableId = tempId..name = "Connecting Device..."..lastSeen = DateTime.now();
+                await isar.putFoundDevice(placeholder);
+                MessageHandler.handleIncomingMessage(senderStableId: tempId, data: val);
+              }
+            });
           }
         }
+      } catch (e) { 
+        _log.severe('Write error: $e'); 
+        return WriteRequestResult(status: 1); 
       }
-    } catch (e) {
-      _log.warning(
-        'BlePeripheral.initialize() failed (Advertising may be unsupported): $e',
-      );
-    }
-
-    _log.fine('Setting up BLE callbacks');
-
-    BlePeripheral.setAdvertisingStatusUpdateCallback((isAdvertising, error) {
-      _log.info(
-        'Advertising status update from plugin: isAdvertising=$isAdvertising, error=$error',
-      );
-      _isAdvertising = isAdvertising;
-      _advertisingStatusController.add(isAdvertising);
-
-      if (error != null) {
-        _log.severe('Plugin reported advertisement error: $error');
-      }
+      return WriteRequestResult(status: 0);
     });
 
-    BlePeripheral.setConnectionStateChangeCallback((deviceId, connected) {
-      _log.info(
-        'Connection State Change | Device: $deviceId | Connected: $connected',
-      );
-      if (connected) {
-        _connectedDevices.add(deviceId);
-      } else {
-        _connectedDevices.remove(deviceId);
-        _deviceMtu.remove(deviceId);
-      }
-      _connectionController.add({deviceId: connected});
-    });
-
-    BlePeripheral.setMtuChangeCallback((deviceId, mtu) {
-      _log.info('MTU Change | Device: $deviceId | New MTU: $mtu');
-      _deviceMtu[deviceId] = mtu;
-    });
-
-    BlePeripheral.setWriteRequestCallback((
-      deviceId,
-      characteristicUuid,
-      offset,
-      value,
-    ) {
-      final charUuidLower = characteristicUuid.toLowerCase();
-      final valueLen = value?.length ?? 0;
-      final hexValue = value != null
-          ? value.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')
-          : 'null';
-
-      _log.info(
-        'Write Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset | Len: $valueLen | Data: [$hexValue]',
-      );
-
+    BlePeripheral.setReadRequestCallback((id, char, offset, val) {
+      final charLower = char.toLowerCase();
       try {
-        if (charUuidLower == messageCharUuid.toLowerCase()) {
-          if (value != null) {
-            if (value.isNotEmpty && value[0] == 0x05 && value.length == 10) {
-              // It's a raw ACK packet, skip ChunkedTransferManager
-              MessageHandler.handleIncomingAck(value);
-              return WriteRequestResult(status: 0);
-            }
-
-            final isar = IsarService();
-            if (isar.isOpen) {
-              isar
-                  .findDeviceByRemoteId(deviceId)
-                  .then((device) async {
-                    if (device != null) {
-                      _log.info(
-                        'Processing Message from ${device.stableId} (Remote: $deviceId)',
-                      );
-                      MessageHandler.handleIncomingMessage(
-                        senderStableId: device.stableId,
-                        data: value,
-                      );
-                    } else {
-                      // Unknown device connected (likely non-advertising like a Chromebook)
-                      // Create a placeholder record so we can at least receive and reassemble chunks.
-                      // We'll use a temporary stableId based on the MAC hash until it identifies itself.
-                      final tempId = deviceId.hashCode.abs();
-                      _log.info(
-                        'Unknown device $deviceId connected. Creating placeholder ID: $tempId',
-                      );
-
-                      final placeholder = FoundDevice()
-                        ..remoteId = deviceId
-                        ..stableId = tempId
-                        ..name = "Connecting Device..."
-                        ..lastSeen = DateTime.now();
-
-                      await isar.putFoundDevice(placeholder);
-
-                      MessageHandler.handleIncomingMessage(
-                        senderStableId: tempId,
-                        data: value,
-                      );
-                    }
-                  })
-                  .catchError((e) {
-                    _log.severe('Error handling message from $deviceId: $e');
-                  });
-            } else {
-              _log.warning('Message Write Error: Isar DB is closed');
-            }
-          } else {
-            _log.warning('Message Write Warning: Received null value');
-          }
-        } else if (charUuidLower == profilePicCharUuid.toLowerCase()) {
-          _log.info('Profile Write Request | Device: $deviceId (Ignored - Pull model active)');
-        } else {
-          _log.fine('Write request to unknown characteristic: $charUuidLower');
-        }
-      } catch (e) {
-        _log.severe('Global error in setWriteRequestCallback: $e');
-        return WriteRequestResult(status: 1); // 1 = General Failure
-      }
-      return WriteRequestResult(status: 0); // 0 = Success
-    });
-
-    BlePeripheral.setReadRequestCallback((
-      deviceId,
-      characteristicUuid,
-      offset,
-      value,
-    ) {
-      try {
-        final charUuidLower = characteristicUuid.toLowerCase();
-        _log.info(
-          'Read Request | Device: $deviceId | Char: $charUuidLower | Offset: $offset',
-        );
-
-        if (charUuidLower == profilePicCharUuid.toLowerCase() && offset == 0) {
-          _log.info('Profile Picture Read detected from $deviceId. Preparing stream...');
-          
-          // Calculate chunk size based on MTU
-          final mtu = getMtuForDevice(deviceId);
-          final chunkSize = (mtu - 3).clamp(20, 500);
-
-          // We handle the streaming asynchronously
-          _streamProfilePicture(deviceId, chunkSize);
-          
-          // Prepare header: [Magic(0xAA), Size (2 bytes), ChunkCount (2 bytes)]
+        if (charLower == profilePicCharUuid.toLowerCase() && offset == 0) {
+          final chunkSize = (getMtuForDevice(id) - 3).clamp(20, 500);
+          _streamProfilePicture(id, chunkSize);
           final header = _getProfileHeaderSync(chunkSize);
-          if (header != null) {
-            return ReadRequestResult(value: header, status: 0);
-          }
+          if (header != null) return ReadRequestResult(value: header, status: 0);
         }
-      } catch (e) {
-        _log.severe('Error in setReadRequestCallback: $e');
+        if (charLower == fullHashCharUuid.toLowerCase()) {
+          return ReadRequestResult(value: _currentFullHash ?? Uint8List.fromList([0,0,0,0,0,0]), status: 0);
+        }
+        if (charLower == publicKeyCharUuid.toLowerCase()) {
+          return ReadRequestResult(value: _currentPubKey ?? Uint8List(32), status: 0);
+        }
+        if (charLower == nameCharUuid.toLowerCase()) {
+          return ReadRequestResult(value: Uint8List.fromList(utf8.encode(_currentName ?? "Unknown")), status: 0);
+        }
+      } catch (e) { 
+        _log.severe('Read error: $e'); 
       }
-      return null; // Return null to use the characteristic's current value
+      return null;
     });
-
     return true;
   }
 
+  Future<bool> _waitForBluetooth() async {
+    BluetoothAdapterState s = FlutterBluePlus.adapterStateNow;
+    if (s == BluetoothAdapterState.on) return true;
+    if (s == BluetoothAdapterState.unknown) await Future.delayed(const Duration(seconds: 3));
+    try { await FlutterBluePlus.adapterState.where((s) => s == BluetoothAdapterState.on).first.timeout(const Duration(seconds: 15)); return true; } catch (_) { return true; }
+  }
+
   static Uint8List? _getProfileHeaderSync(int chunkSize) {
-    // Note: This is synchronous to respond to GATT read immediately
     if (_currentProfilePic == null || _currentProfilePic!.isEmpty) return null;
-    
-    final int size = _currentProfilePic!.length;
-    final int chunkCount = (size / chunkSize).ceil();
-    
-    final header = Uint8List(5);
-    header[0] = 0xAA; // Magic byte
-    final bd = ByteData.view(header.buffer);
-    bd.setUint16(1, size, Endian.big);
-    bd.setUint16(3, chunkCount, Endian.big);
-    
-    return header;
+    final size = _currentProfilePic!.length, count = (size / chunkSize).ceil();
+    final h = Uint8List(5); h[0] = 0xAA;
+    final bd = ByteData.view(h.buffer); bd.setUint16(1, size, Endian.big); bd.setUint16(3, count, Endian.big);
+    return h;
   }
 
-  static Future<void> _streamProfilePicture(
-    String deviceId,
-    int chunkSize,
-  ) async {
+  static Future<void> _streamProfilePicture(String id, int chunkSize) async {
     try {
-      if (_currentProfilePic == null || _currentProfilePic!.isEmpty) {
-        _log.warning('Stream Profile Error: Local picture empty');
-        return;
-      }
-
+      if (_currentProfilePic == null || _currentProfilePic!.isEmpty) return;
       final bytes = _currentProfilePic!;
-      final int totalSize = bytes.length;
-      
-      _log.info('Starting profile stream to $deviceId ($totalSize bytes, Chunk size: $chunkSize)');
-      
-      // Wait for central to enable notifications and prepare
       await Future.delayed(const Duration(milliseconds: 300));
-
       int offset = 0;
-      int chunkIdx = 0;
-      while (offset < totalSize) {
-        final end = (offset + chunkSize < totalSize) ? offset + chunkSize : totalSize;
-        final chunk = bytes.sublist(offset, end);
-        
-        _log.fine('Sending profile chunk ${chunkIdx + 1} (${chunk.length} bytes)');
-        
-        await BlePeripheral.updateCharacteristic(
-          characteristicId: profilePicCharUuid,
-          value: chunk,
-          deviceId: deviceId,
-        );
-
-        offset = end;
-        chunkIdx++;
-        
-        // Throttling to prevent buffer saturation on sensitive stacks (Chromebook)
-        await Future.delayed(const Duration(milliseconds: 100));
+      while (offset < bytes.length) {
+        final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
+        await BlePeripheral.updateCharacteristic(characteristicId: profilePicCharUuid, value: bytes.sublist(offset, end), deviceId: id);
+        offset = end; await Future.delayed(const Duration(milliseconds: 100));
       }
-      
-      _log.info('Profile stream to $deviceId complete. Sent $chunkIdx chunks.');
-    } catch (e) {
-      _log.severe('Error during profile streaming: $e');
-    }
+    } catch (e) { _log.severe('Stream fail: $e'); }
   }
 
-  Stream<bool> get advertisingStatusStream =>
-      _advertisingStatusController.stream;
-
-  bool get isAdvetising => _isAdvertising;
-
-  Future<void> startAdvertising({
-    required String localName,
-    double latitude = 0.0,
-    double longitude = 0.0,
-    bool isOnline = false,
-  }) async {
+  Future<void> startAdvertising({required String localName, double latitude = 0.0, double longitude = 0.0, bool isOnline = false}) async {
     try {
-      if (_initialized == false) {
-        bool success = await initialize();
-        if (!success) return;
-      }
-
-      if (Platform.isAndroid && !await BlePeripheral.isSupported()) {
-        _log.warning('Hardware does not support Peripheral Mode (Advertising)');
-        return;
-      }
-
+      if (!_initialized) await initialize();
+      if (Platform.isAndroid && !await BlePeripheral.isSupported()) return;
       await _waitForBluetooth();
-
-      _log.info('Resetting BLE stack before starting...');
-      try {
-        await BlePeripheral.stopAdvertising();
-        await BlePeripheral.clearServices();
-      } catch (e) {
-        _log.fine('Clean reset ignored: $e');
-      }
-
-      await Future.delayed(const Duration(seconds: 1));
 
       _currentProfilePic = await ProfileManager.getProfilePicture();
       _currentFullHash = await ProfileManager.getProfileHash();
+      _currentName = localName;
       final stableId = await ProfileManager.getStableDeviceId();
-      final keyPair = await ProfileManager.getKeyPair();
-      final pubKey = await keyPair.extractPublicKey();
+      final kp = await ProfileManager.getKeyPair();
+      _currentPubKey = Uint8List.fromList((await kp.extractPublicKey()).bytes);
 
-      await BlePeripheral.addService(
-        BleService(
-          uuid: serviceUuid,
-          primary: true,
+      if (!_servicesAdded) {
+        _log.info('Setup BLE services...');
+        await BlePeripheral.clearServices().catchError((_) {});
+        await BlePeripheral.addService(BleService(
+          uuid: serviceUuid, primary: true,
           characteristics: [
-            BleCharacteristic(
-              uuid: messageCharUuid,
-              properties: [
-                CharacteristicProperties.write.index,
-                CharacteristicProperties.notify.index,
-                CharacteristicProperties.indicate.index,
-              ],
-              permissions: [AttributePermissions.writeable.index],
-              value: Uint8List.fromList([0x00]),
-            ),
-            BleCharacteristic(
-              uuid: profilePicCharUuid,
-              properties: [
-                CharacteristicProperties.read.index,
-                CharacteristicProperties.write.index,
-                CharacteristicProperties.notify.index,
-                CharacteristicProperties.indicate.index,
-              ],
-              permissions: [
-                AttributePermissions.readable.index,
-                AttributePermissions.writeable.index,
-              ],
-              value: _currentProfilePic ?? Uint8List.fromList([]),
-            ),
-            BleCharacteristic(
-              uuid: fullHashCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
-            ),
-            BleCharacteristic(
-              uuid: locationCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: MeshPacketEncoder.encodeLocation(latitude, longitude),
-            ),
-            BleCharacteristic(
-              uuid: publicKeyCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: Uint8List.fromList(pubKey.bytes),
-            ),
-            BleCharacteristic(
-              uuid: nameCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: Uint8List.fromList(utf8.encode(localName)),
-            ),
+            BleCharacteristic(uuid: messageCharUuid, properties: [CharacteristicProperties.write.index, CharacteristicProperties.notify.index, CharacteristicProperties.indicate.index], permissions: [AttributePermissions.writeable.index], value: Uint8List.fromList([0x00])),
+            BleCharacteristic(uuid: profilePicCharUuid, properties: [CharacteristicProperties.read.index, CharacteristicProperties.write.index, CharacteristicProperties.notify.index, CharacteristicProperties.indicate.index], permissions: [AttributePermissions.readable.index, AttributePermissions.writeable.index], value: _currentProfilePic ?? Uint8List.fromList([])),
+            BleCharacteristic(uuid: fullHashCharUuid, properties: [CharacteristicProperties.read.index], permissions: [AttributePermissions.readable.index], value: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0])),
+            BleCharacteristic(uuid: locationCharUuid, properties: [CharacteristicProperties.read.index], permissions: [AttributePermissions.readable.index], value: MeshPacketEncoder.encodeLocation(latitude, longitude)),
+            BleCharacteristic(uuid: publicKeyCharUuid, properties: [CharacteristicProperties.read.index], permissions: [AttributePermissions.readable.index], value: _currentPubKey!),
+            BleCharacteristic(uuid: nameCharUuid, properties: [CharacteristicProperties.read.index], permissions: [AttributePermissions.readable.index], value: Uint8List.fromList(utf8.encode(localName))),
           ],
-        ),
-      );
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final mainPayload = MeshPacketEncoder.encodeMainPacket(
-        stableId: stableId,
-        profileHash: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
-        isIOS: Platform.isIOS,
-        isOnline: isOnline,
-      );
-
-      final scanResponsePayload =
-          MeshPacketEncoder.encodeScanResponseManufacturerData(
-            latitude: latitude,
-            longitude: longitude,
-            profileHash: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]),
-          );
-
-      _log.info('Starting BLE advertising...');
-      await BlePeripheral.startAdvertising(
-        services: [serviceUuid],
-        localName: localName,
-        manufacturerData: ManufacturerData(
-          manufacturerId: 0xFFFF,
-          data: mainPayload,
-        ),
-        addManufacturerDataInScanResponse: false,
-        scanResponseManufacturerData: ManufacturerData(
-          manufacturerId: 0xFFFF,
-          data: scanResponsePayload,
-        ),
-      );
-    } catch (e) {
-      if (e.toString().contains("UnsupportedOperationException") ||
-          e.toString().contains("Advertising not supported")) {
-        _log.warning('Detected unsupported advertising hardware.');
+        ));
+        _servicesAdded = true;
+        await Future.delayed(const Duration(milliseconds: 500));
       } else {
-        _log.severe('Failed to start advertising: $e');
+        await BlePeripheral.updateCharacteristic(characteristicId: locationCharUuid, value: MeshPacketEncoder.encodeLocation(latitude, longitude));
+        await BlePeripheral.updateCharacteristic(characteristicId: fullHashCharUuid, value: _currentFullHash ?? Uint8List.fromList([0, 0, 0, 0, 0, 0]));
+        await BlePeripheral.updateCharacteristic(characteristicId: nameCharUuid, value: Uint8List.fromList(utf8.encode(localName)));
       }
-      await BlePeripheral.stopAdvertising();
-    }
+
+      final main = MeshPacketEncoder.encodeMainPacket(stableId: stableId, profileHash: _currentFullHash ?? Uint8List.fromList([0,0,0,0,0,0]), isIOS: Platform.isIOS, isOnline: isOnline);
+      final scanResp = MeshPacketEncoder.encodeScanResponseManufacturerData(latitude: latitude, longitude: longitude, profileHash: _currentFullHash ?? Uint8List.fromList([0,0,0,0,0,0]));
+
+      await BlePeripheral.startAdvertising(
+        services: [serviceUuid], localName: localName,
+        manufacturerData: ManufacturerData(manufacturerId: 0xFFFF, data: main),
+        addManufacturerDataInScanResponse: false,
+        scanResponseManufacturerData: ManufacturerData(manufacturerId: 0xFFFF, data: scanResp),
+      );
+    } catch (e) { _log.severe('Ad start fail: $e'); await BlePeripheral.stopAdvertising(); }
   }
 
   Future<void> stopAdvertising() async {
@@ -505,8 +216,9 @@ class BLEAdvertiser {
       if (!_initialized) return;
       await BlePeripheral.stopAdvertising();
       await Future.delayed(const Duration(milliseconds: 500));
-    } catch (e) {
-      _log.severe(e);
-    }
+    } catch (e) { _log.severe(e); }
   }
+
+  Stream<bool> get advertisingStatusStream => _advertisingStatusController.stream;
+  bool get isAdvertising => _isAdvertising;
 }

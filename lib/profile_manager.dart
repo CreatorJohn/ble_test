@@ -56,13 +56,13 @@ class ProfileManager {
     final bytes = await croppedFile.readAsBytes();
     _log.info('Original cropped size: ${bytes.length} bytes');
 
-    // Compress and resize to 256x256 WebP using native library
+    // Compress and resize to 128x128 WebP using native library
     try {
-      _log.info('Compressing to 256x256 WebP...');
+      _log.info('Compressing to 128x128 WebP...');
       final webpBytes = await FlutterImageCompress.compressWithList(
         bytes,
-        minWidth: 256,
-        minHeight: 256,
+        minWidth: 128,
+        minHeight: 128,
         quality: 75,
         format: CompressFormat.webp,
       );
@@ -91,15 +91,6 @@ class ProfileManager {
 
     String? privBase64 = await _secureStorage.read(key: _privateKeyKey);
     String? pubBase64 = prefs.getString(_publicKeyKey);
-
-    if (privBase64 == null) {
-      final oldPrivBase64 = prefs.getString(_privateKeyKey);
-      if (oldPrivBase64 != null) {
-        await _secureStorage.write(key: _privateKeyKey, value: oldPrivBase64);
-        privBase64 = oldPrivBase64;
-        await prefs.remove(_privateKeyKey);
-      }
-    }
 
     if (privBase64 == null || pubBase64 == null) {
       final keyPair = await algorithm.newKeyPair();

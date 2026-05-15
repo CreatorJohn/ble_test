@@ -21,52 +21,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
-  final serviceRunning = await service.isRunning();
-
-  if (serviceRunning) {
-    log.warning("Service is already running");
-    return;
-  }
+  if (await service.isRunning()) return;
 
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'scanning_status',
-    'BLE Scanning Status',
-    description: 'This channel is used for BLE scanning status.',
-    importance: Importance.low,
-  );
-
-  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
-      ?.createNotificationChannel(channel);
+    'scanning_status', 'BLE Status', importance: Importance.low);
+  final notificationPlugin = FlutterLocalNotificationsPlugin();
+  await notificationPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
-      onStart: onStart,
-      autoStart: true,
-      isForegroundMode: true,
+      onStart: onStart, autoStart: true, isForegroundMode: true,
       notificationChannelId: "scanning_status",
-      initialNotificationTitle: "BLE Scanner",
-      initialNotificationContent: "Monitoring nearby devices",
-      foregroundServiceTypes: [
-        AndroidForegroundType.location,
-        AndroidForegroundType.connectedDevice,
-      ],
+      initialNotificationTitle: "BLE Mesh Active",
+      initialNotificationContent: "Monitoring mesh network",
+      foregroundServiceTypes: [AndroidForegroundType.location, AndroidForegroundType.connectedDevice],
     ),
-    iosConfiguration: IosConfiguration(
-      autoStart: true,
-      onForeground: onStart,
-      onBackground: onIosBackground,
-    ),
+    iosConfiguration: IosConfiguration(autoStart: true, onForeground: onStart, onBackground: (_) async => true),
   );
-}
-
-@pragma("vm:entry-point")
-Future<bool> onIosBackground(ServiceInstance service) async {
-  return true;
 }
 
 final Logger log = Logger('BackgroundService');
@@ -74,135 +45,59 @@ final Logger log = Logger('BackgroundService');
 @pragma("vm:entry-point")
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
-
   final advertiser = BLEAdvertiser();
 
-  // 1. Setup isolate-level logging
   Logger.root.level = Level.ALL;
-  Logger.root.onRecord.listen((record) {
-    service.invoke('log', {
-      'message':
-          '[BG] [${record.time.hour}:${record.time.minute}:${record.time.second}] [${record.level.name}] ${record.loggerName}: ${record.message}',
-      'level': record.level.name,
-    });
-  });
+  Logger.root.onRecord.listen((r) => service.invoke('log', {
+    'message': '[BG] [${r.time.hour}:${r.time.minute}:${r.time.second}] [${r.level.name}] ${r.loggerName}: ${r.message}',
+    'level': r.level.name,
+  }));
 
   log.info('Service isolate started');
+  advertiser.initialize(ignorePermissions: true);
 
-  // Initialize BLE stack immediately so we can receive inbound connections
-  // even before we start advertising.
-  advertiser
-      .initialize(ignorePermissions: true)
-      .then((_) {
-        log.info('BLEAdvertiser initialized in background isolate');
-      })
-      .catchError((e) {
-        log.warning('BLEAdvertiser early initialization failed: $e');
-      });
-
-  // Catch unhandled errors in the background isolate
-  runZonedGuarded(
-    () async {
-      await _startServiceLogic(service, advertiser);
-    },
-    (error, stack) {
-      log.severe('Top-level background error: $error', error, stack);
-    },
-  );
+  runZonedGuarded(() async => await _startServiceLogic(service, advertiser),
+    (error, stack) => log.severe('Top-level error: $error', error, stack));
 }
 
-Future<void> _startServiceLogic(
-  ServiceInstance service,
-  BLEAdvertiser advertiser,
-) async {
+Future<void> _startServiceLogic(ServiceInstance service, BLEAdvertiser advertiser) async {
   await Future.delayed(const Duration(seconds: 1));
-
   final prefs = await SharedPreferences.getInstance();
-  String currentName = prefs.getString('advertising_name_v2') ?? "BLE Test";
+  String currentName = prefs.getString('advertising_name_v2') ?? "BLE Node";
   bool advertisingOn = prefs.getBool('advertising_on') ?? false;
-  double currentLat = 0.0;
-  double currentLon = 0.0;
-  bool isOnline = false;
-
-  bool isAdUpdating = false;
-  bool needsTrailingUpdate = false;
-  bool isScanOperationInProgress = false;
+  double currentLat = 0.0, currentLon = 0.0;
+  bool isOnline = false, isAdUpdating = false, needsTrailingUpdate = false, isScanOperationInProgress = false;
 
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
-
-    if (isAdUpdating ||
-        isScanOperationInProgress ||
-        BLEAdvertiser.hasInboundConnections) {
-      // Already in cooldown, scanning, or being accessed by neighbor
+    if (isAdUpdating || isScanOperationInProgress || BLEAdvertiser.hasInboundConnections) {
       needsTrailingUpdate = true;
       return;
     }
-
     isAdUpdating = true;
     needsTrailingUpdate = false;
-
     try {
-      log.info('Updating advertisement: name=$currentName, online=$isOnline');
-      await advertiser.startAdvertising(
-        localName: currentName,
-        latitude: currentLat,
-        longitude: currentLon,
-        isOnline: isOnline,
-      );
-    } catch (e) {
-      log.severe('updateAd failed: $e');
-    }
-
-    // Start 5-second cooldown
+      await advertiser.startAdvertising(localName: currentName, latitude: currentLat, longitude: currentLon, isOnline: isOnline);
+    } catch (e) { log.severe('Ad update fail: $e'); }
     Timer(const Duration(seconds: 5), () {
       isAdUpdating = false;
-      // If data changed during cooldown, perform one final sync
-      if (needsTrailingUpdate && advertisingOn) {
-        updateAd();
-      }
+      if (needsTrailingUpdate && advertisingOn) updateAd();
     });
   }
 
-  // Listen for neighbor disconnections to trigger deferred ad updates
   BLEAdvertiser.connectionStream.listen((event) {
-    final isConnected = event.values.first;
-    if (!isConnected && needsTrailingUpdate && advertisingOn) {
-      log.info('Neighbor disconnected, triggering deferred ad update...');
-      updateAd();
-    }
+    if (!event.values.first && needsTrailingUpdate && advertisingOn) updateAd();
   });
 
-  log.info('Setting up location stream...');
-  Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
-    ),
-  ).listen(
-    (Position position) {
-      log.fine('Location update: ${position.latitude}, ${position.longitude}');
-      currentLat = position.latitude;
-      currentLon = position.longitude;
+  Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5)).listen((p) {
+    currentLat = p.latitude; currentLon = p.longitude;
+    if (advertisingOn) updateAd();
+  }, onError: (e) {
+    log.warning('Loc error: $e');
+  });
 
-      if (advertisingOn) updateAd();
-    },
-    onError: (e) {
-      log.warning('Location stream error: $e');
-    },
-  );
-
-  final isarService = IsarService();
-  try {
-    log.info('Initializing IsarService...');
-    await isarService.initialize();
-    log.info('IsarService initialized');
-  } catch (e) {
-    log.severe('IsarService initialization failed: $e');
-    return;
-  }
-
-  // Ensure MessageHandler is listening to ChunkedTransferManager in background isolate
+  final isar = IsarService();
+  await isar.initialize();
   MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
@@ -210,685 +105,245 @@ Future<void> _startServiceLogic(
   final Map<int, DateTime> lastSyncAttempt = {};
 
   FlutterBluePlus.scanResults.listen((results) async {
-    if (!isarService.isOpen) return;
-
-    // If someone connects to us while we are scanning, stop scanning to avoid radio conflict
+    if (!isar.isOpen) return;
     if (BLEAdvertiser.hasInboundConnections && FlutterBluePlus.isScanningNow) {
-      log.info('Inbound connection detected, auto-stopping scan to prioritize GATT server');
+      log.info('Inbound active, pausing scan');
       FlutterBluePlus.stopScan();
       return;
     }
 
-    for (final ScanResult result in results) {
-      final advData = result.advertisementData;
-      final remoteId = result.device.remoteId.toString();
-
-      // Manufacturer ID 0xFFFF is used for our custom mesh payload
-      final meshDataRaw = advData.manufacturerData[0xFFFF];
+    for (final r in results) {
+      final meshDataRaw = r.advertisementData.manufacturerData[0xFFFF];
       if (meshDataRaw == null || meshDataRaw.length < 5) continue;
-
       final meshData = Uint8List.fromList(meshDataRaw);
-
-      int? stableId;
-      int? versionTag;
-      String? profileHash;
-      double? lat;
-      double? lon;
+      int? stableId, versionTag; String? profileHash; double? lat, lon;
 
       if (meshData.length == 5) {
-        // Main Packet: [ID(4)][Version/Flags(1)]
-        final buffer = ByteData.view(meshData.buffer);
-        stableId = buffer.getUint32(0, Endian.big);
+        final bd = ByteData.view(meshData.buffer);
+        stableId = bd.getUint32(0, Endian.big);
         versionTag = (meshData[4] >> 2) & 0x3F;
       } else if (meshData.length == 12) {
-        // Scan Response: [Lat(3)][Lon(3)][Hash(6)]
-        lat = MeshPacketEncoder.decodeCoordinate(
-          (meshData[0] << 16) | (meshData[1] << 8) | meshData[2],
-          true,
-        );
-        lon = MeshPacketEncoder.decodeCoordinate(
-          (meshData[3] << 16) | (meshData[4] << 8) | meshData[5],
-          false,
-        );
-        profileHash = meshData
-            .sublist(6, 12)
-            .map((b) => b.toRadixString(16).padLeft(2, '0'))
-            .join();
+        lat = MeshPacketEncoder.decodeCoordinate((meshData[0] << 16) | (meshData[1] << 8) | meshData[2], true);
+        lon = MeshPacketEncoder.decodeCoordinate((meshData[3] << 16) | (meshData[4] << 8) | meshData[5], false);
+        profileHash = meshData.sublist(6, 12).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
       } else if (meshData.length >= 17) {
-        // Merged: [Main(5)][ScanResponse(12)]
-        final buffer = ByteData.view(meshData.buffer);
-        stableId = buffer.getUint32(0, Endian.big);
-        versionTag = (meshData[4] >> 2) & 0x3F;
-
-        lat = MeshPacketEncoder.decodeCoordinate(
-          (meshData[5] << 16) | (meshData[6] << 8) | meshData[7],
-          true,
-        );
-        lon = MeshPacketEncoder.decodeCoordinate(
-          (meshData[8] << 16) | (meshData[9] << 8) | meshData[10],
-          false,
-        );
-        profileHash = meshData
-            .sublist(11, 17)
-            .map((b) => b.toRadixString(16).padLeft(2, '0'))
-            .join();
+        final bd = ByteData.view(meshData.buffer);
+        stableId = bd.getUint32(0, Endian.big); versionTag = (meshData[4] >> 2) & 0x3F;
+        lat = MeshPacketEncoder.decodeCoordinate((meshData[5] << 16) | (meshData[6] << 8) | meshData[7], true);
+        lon = MeshPacketEncoder.decodeCoordinate((meshData[8] << 16) | (meshData[9] << 8) | meshData[10], false);
+        profileHash = meshData.sublist(11, 17).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
       }
 
-      // If we don't have a stableId in this packet, try to find it in the DB by remoteId
       if (stableId == null) {
-        final existingByRemote = await isarService.db.foundDevices
-            .where()
-            .remoteIdEqualTo(remoteId)
-            .findFirst();
-        if (existingByRemote != null) {
-          stableId = existingByRemote.stableId;
-        }
+        final dev = await isar.db.foundDevices.where().remoteIdEqualTo(r.device.remoteId.toString()).findFirst();
+        if (dev != null) stableId = dev.stableId;
       }
 
-      if (stableId == null || stableId == myStableId) {
-        continue;
-      }
+      if (stableId == null || stableId == myStableId) continue;
+      final dev = (await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst()) ?? (FoundDevice()..stableId = stableId);
+      dev.remoteId = r.device.remoteId.toString(); dev.rssi = r.rssi; dev.lastSeen = DateTime.now();
+      if (r.advertisementData.advName.isNotEmpty) dev.name = r.advertisementData.advName;
+      if (versionTag != null) dev.versionTag = versionTag;
+      if (profileHash != null) dev.profileHash = profileHash;
+      if (lat != null) dev.latitude = lat; if (lon != null) dev.longitude = lon;
 
-      FoundDevice device;
-      final existing = await isarService.db.foundDevices
-          .where()
-          .stableIdEqualTo(stableId)
-          .findFirst();
-
-      if (existing != null) {
-        device = existing;
-      } else {
-        device = FoundDevice()..stableId = stableId;
-      }
-
-      // Update volatile fields
-      device.remoteId = remoteId;
-      device.rssi = result.rssi;
-      device.lastSeen = DateTime.now();
-
-      // Only update metadata if present in this packet
-      if (advData.advName.isNotEmpty) {
-        device.name = advData.advName;
-      }
-      if (versionTag != null) device.versionTag = versionTag;
-      if (profileHash != null) device.profileHash = profileHash;
-      if (lat != null) device.latitude = lat;
-      if (lon != null) device.longitude = lon;
-
-      try {
-        bool needsMetadataUpdate = false;
-
-        if (existing != null) {
-          bool versionChanged =
-              versionTag != null && existing.versionTag != versionTag;
-          bool needsForcedSync =
-              existing.lastPictureSync == null ||
-              DateTime.now().difference(existing.lastPictureSync!).inHours >=
-                  24;
-
-          if (versionChanged || needsForcedSync) {
-            needsMetadataUpdate = true;
-          }
-        } else {
-          needsMetadataUpdate = true;
-        }
-
-        // Save the basic device info first
-        await isarService.putFoundDevice(device);
-
-        if (needsMetadataUpdate) {
-          final lastAttempt = lastSyncAttempt[stableId];
-          final bool isCooldownActive =
-              lastAttempt != null &&
-              DateTime.now().difference(lastAttempt).inMinutes < 5;
-
-          if (!isCooldownActive) {
-            syncQueue[stableId] = result.device;
-          }
-        }
-      } catch (e) {
-        log.warning('Error processing scan result for $stableId: $e');
+      bool needsUpdate = dev.profilePicture == null || (versionTag != null && dev.versionTag != versionTag) || 
+          (dev.lastPictureSync == null || DateTime.now().difference(dev.lastPictureSync!).inHours >= 24);
+      
+      await isar.putFoundDevice(dev);
+      if (needsUpdate) {
+        final last = lastSyncAttempt[stableId];
+        if (last == null || DateTime.now().difference(last).inMinutes >= 5) syncQueue[stableId] = r.device;
       }
     }
   });
 
-  const scanDuration = Duration(seconds: 10);
-  const waitDuration = Duration(seconds: 50);
+  const scanDuration = Duration(seconds: 10), waitDuration = Duration(seconds: 50);
   DateTime? lastScanStartTime;
 
   Future<void> startSafeScan() async {
-    if (isScanOperationInProgress) {
-      log.info('Scan operation already in progress, skipping trigger.');
-      return;
+    if (isScanOperationInProgress) return;
+    int defer = 0;
+    while (BLEAdvertiser.hasInboundConnections && defer < 6) {
+      await Future.delayed(const Duration(seconds: 5)); defer++;
     }
-
-    // If a neighbor is connected to us, defer scan to avoid dropping their connection
-    int deferCount = 0;
-    while (BLEAdvertiser.hasInboundConnections && deferCount < 6) {
-      log.info(
-        'Inbound connection active, deferring scan (attempt ${deferCount + 1}/6)...',
-      );
-      await Future.delayed(const Duration(seconds: 5));
-      deferCount++;
-    }
-
-    if (BLEAdvertiser.hasInboundConnections) {
-      log.warning(
-        'Inbound connection still active after 30s, skipping this scan cycle.',
-      );
-      return;
-    }
+    if (BLEAdvertiser.hasInboundConnections) return;
 
     isScanOperationInProgress = true;
-
     try {
-      log.info('Attempting startSafeScan...');
-      service.invoke("updateAdvertisingName", {"name": currentName});
+      if (!await FlutterBluePlus.isSupported) return;
+      final needsSync = await isar.db.foundDevices.filter().publicKeyIsNull().or().nameEqualTo("Connecting Device...").findAll();
+      for (final dev in needsSync) { if (!syncQueue.containsKey(dev.stableId)) syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId); }
 
-      if (!await FlutterBluePlus.isSupported) {
-        log.warning('Bluetooth not supported on this device');
-        return;
+      if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+        await FlutterBluePlus.adapterState.where((s) => s == BluetoothAdapterState.on).first.timeout(const Duration(seconds: 15)).catchError((_) => BluetoothAdapterState.off);
       }
+      if (FlutterBluePlus.isScanningNow) { await FlutterBluePlus.stopScan(); await Future.delayed(const Duration(seconds: 1)); }
 
-      // Add "Placeholder" or metadata-missing devices to sync queue before scanning
-      // This helps with non-advertising devices (Chromebooks) we've met via inbound connect
-      final needsSync = await isarService.db.foundDevices
-          .filter()
-          .publicKeyIsNull()
-          .or()
-          .nameEqualTo("Connecting Device...")
-          .findAll();
-
-      for (final dev in needsSync) {
-        if (!syncQueue.containsKey(dev.stableId)) {
-          log.info(
-            'Adding placeholder ${dev.stableId} (${dev.remoteId}) to sync queue',
-          );
-          syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
-        }
-      }
-
-      // Ensure adapter is ON
-      var state = await FlutterBluePlus.adapterState.first;
-      if (state != BluetoothAdapterState.on) {
-        log.info('Bluetooth state is $state, waiting for ON...');
-        try {
-          state = await FlutterBluePlus.adapterState
-              .where((s) => s == BluetoothAdapterState.on)
-              .first
-              .timeout(const Duration(seconds: 15));
-        } catch (_) {
-          log.warning('Bluetooth did not turn ON in time, skipping scan');
-        }
-      } else {
-        log.info('Bluetooth state is $state');
-      }
-
-      final isScanning = FlutterBluePlus.isScanningNow;
-      if (isScanning) {
-        log.info('Scan already in progress, stopping first...');
-        await FlutterBluePlus.stopScan();
-        await Future.delayed(const Duration(seconds: 1));
-      }
-
-      log.info('Starting BLE scan (duration: ${scanDuration.inSeconds}s)...');
       lastScanStartTime = DateTime.now();
-
-      await FlutterBluePlus.startScan(
-        timeout: scanDuration,
-        withServices: [Guid(BLEAdvertiser.serviceUuid)],
-        androidScanMode: AndroidScanMode.balanced,
-        oneByOne: true,
-      );
-
-      // Wait for scan to actually start (state flips to true)
-      try {
-        await FlutterBluePlus.isScanning
-            .where((s) => s == true)
-            .first
-            .timeout(const Duration(seconds: 2));
-      } catch (_) {
-        // If it was super fast or already started, ignore timeout
-      }
-
-      // Wait for scan to actually stop
+      await FlutterBluePlus.startScan(timeout: scanDuration, withServices: [Guid(BLEAdvertiser.serviceUuid)], androidScanMode: AndroidScanMode.balanced, oneByOne: true);
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
-      log.info('BLE scan complete.');
-
-      // Wait 3 seconds for stack to cool down after scan
       await Future.delayed(const Duration(seconds: 3));
 
       if (syncQueue.isNotEmpty) {
-        log.info('Processing sync queue (${syncQueue.length} devices)...');
         for (final entry in syncQueue.entries) {
-          final id = entry.key;
-          final device = entry.value;
-
-          // Prevent collision by adding random jitter (1-3 seconds)
-          final jitter = 1000 + Random().nextInt(2000);
-          log.info('Jitter wait: ${jitter}ms before syncing $id');
-          await Future.delayed(Duration(milliseconds: jitter));
-
-          lastSyncAttempt[id] = DateTime.now();
-          log.info('Syncing metadata for $id...');
-          await _fetchFullMetadata(device, isarService, id, log);
+          await Future.delayed(Duration(milliseconds: 1000 + Random().nextInt(2000)));
+          lastSyncAttempt[entry.key] = DateTime.now();
+          await _fetchFullMetadata(entry.value, isar, entry.key, log);
         }
         syncQueue.clear();
-        log.info('Sync queue processed.');
-      }    } catch (e) {
-      log.severe('startSafeScan failed: $e');
-      lastScanStartTime = null;
+      }
     } finally {
       isScanOperationInProgress = false;
-      if (needsTrailingUpdate && advertisingOn) {
-        updateAd();
-      }
+      if (needsTrailingUpdate && advertisingOn) updateAd();
     }
   }
 
-  // Progress and Status emitter
   Timer.periodic(const Duration(milliseconds: 500), (t) {
-    final now = DateTime.now();
-    if (FlutterBluePlus.isScanningNow && lastScanStartTime != null) {
-      final elapsed = now.difference(lastScanStartTime!);
-      final progress = elapsed.inMilliseconds / scanDuration.inMilliseconds;
-      service.invoke('updateProgress', {'value': progress.clamp(0.0, 1.0)});
-    } else if (lastScanStartTime != null) {
-      // We are in wait period
-      final elapsedSinceScanStart = now.difference(lastScanStartTime!);
-      final totalCycle = scanDuration + waitDuration;
-      final remainingWaitMs =
-          totalCycle.inMilliseconds - elapsedSinceScanStart.inMilliseconds;
-      final remainingSeconds = (remainingWaitMs / 1000).ceil();
-      final progress = remainingWaitMs / waitDuration.inMilliseconds;
-      service.invoke('updateProgress', {
-        'value': progress.clamp(0.0, 1.0),
-        'remainingSeconds': remainingSeconds.clamp(0, waitDuration.inSeconds),
-      });
+    if (lastScanStartTime == null) return;
+    final now = DateTime.now(), total = scanDuration + waitDuration;
+    final elapsed = now.difference(lastScanStartTime!);
+    if (FlutterBluePlus.isScanningNow) {
+      service.invoke('updateProgress', {'value': (elapsed.inMilliseconds / scanDuration.inMilliseconds).clamp(0.0, 1.0)});
     } else {
-      service.invoke('updateProgress', {'value': 0.0});
+      final rem = total.inMilliseconds - elapsed.inMilliseconds;
+      service.invoke('updateProgress', {'value': (rem / waitDuration.inMilliseconds).clamp(0.0, 1.0), 'remainingSeconds': (rem / 1000).ceil().clamp(0, 60)});
     }
   });
 
-  Timer.periodic(waitDuration + scanDuration, (timer) async {
-    log.info('Scanning cycle timer fired');
-    await startSafeScan();
-  });
-
-  log.info('Performing initial scan...');
+  Timer.periodic(waitDuration + scanDuration, (_) => startSafeScan());
   await startSafeScan();
 
-  service.on('stopService').listen((event) async {
-    log.info('Stop service command received');
-    await advertiser.stopAdvertising();
-    service.stopSelf();
+  service.on('stopService').listen((_) async { await advertiser.stopAdvertising(); service.stopSelf(); });
+  service.on('startAdvertising').listen((e) {
+    final name = e?['name']; advertisingOn = true;
+    if (name is String) { currentName = name; updateAd(); }
   });
-
-  service.on('startAdvertising').listen((event) async {
-    final name = event?['name'];
-    advertisingOn = true;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('advertising_on', true);
-    service.invoke("advertisingChange", {"active": true});
-
-    log.info("Preparing to advertise with $name...");
-    if (name is String) {
-      log.info('Setting advertising name to: $name');
-      currentName = name;
-      updateAd();
-    }
+  service.on('setOnlineStatus').listen((e) {
+    final status = e?['isOnline'];
+    if (status is bool) { isOnline = status; if (advertisingOn) updateAd(); }
   });
-
-  service.on('setOnlineStatus').listen((event) {
-    final status = event?['isOnline'];
-    if (status is bool) {
-      log.info('Setting online status to: $status');
-      isOnline = status;
-      if (advertisingOn) updateAd();
-    }
-  });
-
   service.on("stopAdvertising").listen((_) async {
-    advertisingOn = false;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('advertising_on', false);
+    advertisingOn = false; await advertiser.stopAdvertising();
     service.invoke("advertisingChange", {"active": false});
-    await advertiser.stopAdvertising();
   });
-
-  service.on("updateLocalProfile").listen((_) async {
-    log.info("Local profile change detected, updating characteristics...");
-    updateAd();
-  });
+  service.on("updateLocalProfile").listen((_) => updateAd());
 }
 
-Future<void> _fetchFullMetadata(
-  BluetoothDevice device,
-  IsarService isar,
-  int stableId,
-  Logger log,
-) async {
+Future<void> _fetchFullMetadata(BluetoothDevice device, IsarService isar, int stableId, Logger log) async {
   final remoteId = device.remoteId.toString();
+  bool establishedByUs = false;
   try {
-    // 1. Check if device is already connected to us (Inbound)
     if (BLEAdvertiser.isDeviceConnected(remoteId)) {
-      log.info('Device $stableId is already connected (Inbound). Skipping connection phase.');
+      log.info('Using existing connection for $stableId');
     } else {
-      // 2. Not connected, proceed with standard Central connection
-      try {
-        await device.disconnect();
-        await Future.delayed(const Duration(seconds: 1));
-      } catch (_) {}
-
+      try { await device.disconnect(); await Future.delayed(const Duration(seconds: 1)); } catch (_) {}
       int attempts = 0;
-      bool connected = false;
-
-      while (attempts < 3 && !connected) {
+      while (attempts < 3 && !establishedByUs) {
         attempts++;
-        log.info(
-          'Connecting to $stableId to fetch metadata (Attempt $attempts/3)...',
-        );
         try {
-          await device.connect(
-            autoConnect: false,
-            license: License.free,
-            timeout: const Duration(seconds: 30),
-          );
-          connected = true;
+          await device.connect(autoConnect: false, license: License.free, timeout: const Duration(seconds: 30));
+          establishedByUs = true;
           log.info('Connected to $stableId as Central');
         } catch (e) {
-          final errorStr = e.toString();
-          if (errorStr.contains('already_connected')) {
-            connected = true;
-            log.info('Already connected to $stableId');
-          } else if (errorStr.contains('257') ||
-              errorStr.contains('FAILURE_REGISTERING_CLIENT')) {
-            log.warning(
-              'Received error 257 (Register Client Fail). Cooling down 5s...',
-            );
-            await Future.delayed(const Duration(seconds: 5));
-            if (attempts >= 3) rethrow;
-          } else {
-            log.warning('Connect attempt $attempts failed for $stableId: $e');
-            await Future.delayed(const Duration(seconds: 2));
-            if (attempts >= 3) rethrow;
-          }
+          if (e.toString().contains('already_connected')) { establishedByUs = true; }
+          else if (e.toString().contains('257')) { await Future.delayed(const Duration(seconds: 5)); }
+          else { await Future.delayed(const Duration(seconds: 2)); }
+          if (attempts >= 3 && !establishedByUs) rethrow;
         }
       }
     }
 
-    // Small delay after connection for stability
     await Future.delayed(const Duration(milliseconds: 1000));
-
-    // --- MTU Negotiation Start ---
     if (Platform.isAndroid) {
-      try {
-        log.info('Requesting high MTU for $stableId...');
-        await device.requestMtu(517);
-        // Wait for MTU change
-        final mtu = await device.mtu.first.timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => 23,
-        );
-        log.info('Negotiated MTU for $stableId: $mtu');
-      } catch (e) {
-        log.warning('MTU Request failed for $stableId: $e');
-      }
+      try { await device.requestMtu(517); await device.mtu.first.timeout(const Duration(seconds: 3), onTimeout: () => 23); } catch (_) {}
     }
-    // --- MTU Negotiation End ---
-
     final services = await device.discoverServices();
-
-    // Another delay after service discovery
     await Future.delayed(const Duration(milliseconds: 500));
 
-    BluetoothCharacteristic? picChar;
-    BluetoothCharacteristic? hashChar;
-    BluetoothCharacteristic? locChar;
-    BluetoothCharacteristic? keyChar;
-    BluetoothCharacteristic? nameChar;
-    BluetoothCharacteristic? messageChar;
-
+    BluetoothCharacteristic? picChar, hashChar, locChar, keyChar, nameChar, messageChar;
     for (final s in services) {
-      if (s.uuid.toString().toLowerCase() ==
-          BLEAdvertiser.serviceUuid.toLowerCase()) {
+      if (s.uuid.toString().toLowerCase() == BLEAdvertiser.serviceUuid.toLowerCase()) {
         for (final c in s.characteristics) {
-          final charId = c.uuid.toString().toLowerCase();
-          if (charId == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
-            picChar = c;
-          }
-          if (charId == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
-            hashChar = c;
-          }
-          if (charId == BLEAdvertiser.locationCharUuid.toLowerCase()) {
-            locChar = c;
-          }
-          if (charId == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
-            keyChar = c;
-          }
-          if (charId == BLEAdvertiser.nameCharUuid.toLowerCase()) {
-            nameChar = c;
-          }
-          if (charId == BLEAdvertiser.messageCharUuid.toLowerCase()) {
-            messageChar = c;
-          }
+          final id = c.uuid.toString().toLowerCase();
+          if (id == BLEAdvertiser.profilePicCharUuid.toLowerCase()) picChar = c;
+          else if (id == BLEAdvertiser.fullHashCharUuid.toLowerCase()) hashChar = c;
+          else if (id == BLEAdvertiser.locationCharUuid.toLowerCase()) locChar = c;
+          else if (id == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) keyChar = c;
+          else if (id == BLEAdvertiser.nameCharUuid.toLowerCase()) nameChar = c;
+          else if (id == BLEAdvertiser.messageCharUuid.toLowerCase()) messageChar = c;
         }
       }
     }
 
     if (messageChar != null) {
-      log.info('Subscribing to message notifications from $stableId...');
       try {
         await messageChar.setNotifyValue(true);
-        messageChar.onValueReceived.listen((value) {
-          if (value.isNotEmpty) {
-            log.info(
-              'Received notification chunk from $stableId (${value.length} bytes)',
-            );
-            MessageHandler.handleIncomingMessage(
-              senderStableId: stableId,
-              data: value,
-            );
-          }
-        });
-      } catch (e) {
-        log.warning('Failed to subscribe to notifications: $e');
-      }
-    }
-
-    Future<List<int>> robustRead(BluetoothCharacteristic char) async {
-      int attempts = 0;
-      while (attempts < 3) {
-        try {
-          return await char.read().timeout(const Duration(seconds: 5));
-        } catch (e) {
-          attempts++;
-          if (attempts >= 3) rethrow;
-          log.warning('Read failed, retrying ($attempts/3)... $e');
-          await Future.delayed(const Duration(seconds: 1));
-        }
-      }
-      return [];
-    }
-
-    if (picChar != null) {
-      // ... existing code ...
-    }
-
-    if (messageChar != null) {
-      log.info('Subscribing to message notifications from $stableId...');
-      try {
-        await messageChar.setNotifyValue(true);
-        messageChar.onValueReceived.listen((value) {
-          if (value.isNotEmpty) {
-            log.info(
-              'Received notification chunk from $stableId (${value.length} bytes)',
-            );
-            MessageHandler.handleIncomingMessage(
-              senderStableId: stableId,
-              data: value,
-            );
-          }
-        });
-      } catch (e) {
-        log.warning('Failed to subscribe to notifications: $e');
-      }
+        messageChar.onValueReceived.listen((v) { if (v.isNotEmpty) MessageHandler.handleIncomingMessage(senderStableId: stableId, data: v); });
+      } catch (_) {}
     }
 
     if (hashChar != null) {
-      log.info('Reading full hash from $stableId...');
       final hashBytes = await robustRead(hashChar);
-      final hashHex = hashBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      if (hashBytes.isEmpty) return;
+      final hashHex = hashBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
-      final existing = await isar.db.foundDevices
-          .where()
-          .stableIdEqualTo(stableId)
-          .findFirst();
+      final dev = await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst();
+      if (dev != null) {
+        bool mismatched = dev.profileHash != hashHex, missing = dev.profilePicture == null;
+        dev.profileHash = hashHex;
 
-      if (existing != null) {
-        log.info(
-          'Comparing hashes for $stableId: Local=${existing.profileHash}, Remote=$hashHex',
-        );
-        log.info(
-          'Local picture status for $stableId: ${existing.profilePicture == null ? "MISSING" : "Present (${existing.profilePicture!.length} bytes)"}',
-        );
-
-        bool hashMismatched = existing.profileHash != hashHex;
-        bool pictureMissing = existing.profilePicture == null;
-
-        existing.profileHash = hashHex;
-
-        if (nameChar != null &&
-            (existing.name == null ||
-                existing.name == "Connecting Device...")) {
-          log.info('Syncing name for $stableId...');
-          final nameBytes = await robustRead(nameChar);
-          if (nameBytes.isNotEmpty) {
-            existing.name = utf8.decode(nameBytes, allowMalformed: true);
-          }
+        if (nameChar != null && (dev.name == null || dev.name == "Connecting Device...")) {
+          final nb = await robustRead(nameChar); if (nb.isNotEmpty) dev.name = utf8.decode(nb, allowMalformed: true);
         }
+        if (keyChar != null) { final kb = await robustRead(keyChar); if (kb.isNotEmpty) dev.publicKey = kb; }
 
-        if (keyChar != null) {
-          log.info('Syncing public key for $stableId...');
-          existing.publicKey = await robustRead(keyChar);
-        }
-
-        if (picChar != null && (pictureMissing || hashMismatched)) {
-          log.info(
-            'CONDITION MET: Pulling profile picture from $stableId (Missing=$pictureMissing, Mismatch=$hashMismatched)',
-          );
-
+        if (picChar != null && (missing || mismatched)) {
           try {
-            log.info('Enabling notifications and reading header from $stableId...');
-            
-            // 1. Enable notifications first to catch chunks
             await picChar.setNotifyValue(true);
-            
-            // 2. Read the header packet
-            final header = await picChar.read().timeout(const Duration(seconds: 10));
-            if (header.length < 5 || header[0] != 0xAA) {
-              throw Exception('Invalid profile header received: $header');
-            }
-            
-            final bd = ByteData.view(Uint8List.fromList(header).buffer);
-            final int totalExpectedBytes = bd.getUint16(1, Endian.big);
-            final int chunkCount = bd.getUint16(3, Endian.big);
-            
-            log.info('Expected profile pic: $totalExpectedBytes bytes in $chunkCount chunks from $stableId');
-            
-            final imageBuffer = <int>[];
-            final transferCompleter = Completer<void>();
-            
-            // 3. Listen for chunks
-            final sub = picChar.onValueReceived.listen((value) {
-              imageBuffer.addAll(value);
-              log.fine('Received profile chunk: ${imageBuffer.length}/$totalExpectedBytes');
-              if (imageBuffer.length >= totalExpectedBytes) {
-                if (!transferCompleter.isCompleted) transferCompleter.complete();
-              }
-            });
-
-            try {
-              // 4. Wait for transfer to complete (30s limit)
-              await transferCompleter.future.timeout(const Duration(seconds: 30));
-              
-              if (imageBuffer.length >= totalExpectedBytes) {
-                final finalBytes = Uint8List.fromList(imageBuffer.sublist(0, totalExpectedBytes));
-                log.info('Chunked profile download complete: ${finalBytes.length} bytes from $stableId');
-                
-                existing.profilePicture = finalBytes;
-                await isar.putFoundDevice(existing);
-              }
-            } catch (timeout) {
-              log.warning('Profile transfer timed out for $stableId. Received ${imageBuffer.length}/$totalExpectedBytes');
-            } finally {
-              await sub.cancel();
+            final h = await picChar.read().timeout(const Duration(seconds: 10));
+            if (h.length >= 5 && h[0] == 0xAA) {
+              final bd = ByteData.view(Uint8List.fromList(h).buffer);
+              final expected = bd.getUint16(1, Endian.big);
+              final buffer = <int>[]; final comp = Completer<void>();
+              final sub = picChar.onValueReceived.listen((v) {
+                buffer.addAll(v); if (buffer.length >= expected) { if (!comp.isCompleted) comp.complete(); }
+              });
               try {
-                await picChar.setNotifyValue(false);
-              } catch (_) {}
+                await comp.future.timeout(const Duration(seconds: 30));
+                if (buffer.length >= expected) dev.profilePicture = Uint8List.fromList(buffer.sublist(0, expected));
+              } finally { await sub.cancel(); await picChar.setNotifyValue(false).catchError((_) {}); }
             }
-          } catch (e) {
-            log.warning('Failed to pull profile picture from $stableId: $e');
-          }
-        } else if (picChar == null) {
-          log.warning('Profile picture characteristic NOT FOUND for $stableId');
-        } else {
-          log.info(
-            'Sync not needed for $stableId: Hash matches and picture exists',
-          );
+          } catch (_) {}
         }
 
         if (locChar != null) {
-          log.info('Syncing location for $stableId...');
-          final locBytes = await robustRead(locChar);
-          if (locBytes.length == 6) {
-            final decodedLat = MeshPacketEncoder.decodeCoordinate(
-              (locBytes[0] << 16) | (locBytes[1] << 8) | locBytes[2],
-              true,
-            );
-            final decodedLon = MeshPacketEncoder.decodeCoordinate(
-              (locBytes[3] << 16) | (locBytes[4] << 8) | locBytes[5],
-              false,
-            );
-            existing.latitude = decodedLat;
-            existing.longitude = decodedLon;
+          final lb = await robustRead(locChar);
+          if (lb.length == 6) {
+            dev.latitude = MeshPacketEncoder.decodeCoordinate((lb[0] << 16) | (lb[1] << 8) | lb[2], true);
+            dev.longitude = MeshPacketEncoder.decodeCoordinate((lb[3] << 16) | (lb[4] << 8) | lb[5], false);
           }
         }
-
-        existing.lastPictureSync = DateTime.now();
-
-        // Re-fetch to avoid overwriting volatile fields (RSSI, lastSeen) updated by scan
-        final latest = await isar.db.foundDevices
-            .where()
-            .stableIdEqualTo(stableId)
-            .findFirst();
-
+        dev.lastPictureSync = DateTime.now(); dev.lastSeen = DateTime.now();
+        
+        final latest = await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst();
         if (latest != null) {
-          log.info('Updating Isar with synced metadata for $stableId');
-          latest.profileHash = existing.profileHash;
-          latest.publicKey = existing.publicKey;
-          latest.lastPictureSync = existing.lastPictureSync;
+          latest.profileHash = dev.profileHash; latest.publicKey = dev.publicKey;
+          latest.lastPictureSync = dev.lastPictureSync; latest.name = dev.name;
+          latest.latitude = dev.latitude; latest.longitude = dev.longitude;
+          latest.profilePicture = dev.profilePicture;
           await isar.putFoundDevice(latest);
-        } else {
-          log.warning(
-            'Device $stableId vanished during sync, saving current state',
-          );
-          await isar.putFoundDevice(existing);
-        }
-        log.info('Metadata sync complete for $stableId');
-      } else {
-        log.warning(
-          'Device $stableId not found in Isar, skipping metadata sync',
-        );
+        } else { await isar.putFoundDevice(dev); }
       }
     }
-  } catch (e) {
-    log.warning('Failed to fetch full metadata for $stableId: $e');
-  } finally {
-    try {
-      await device.disconnect();
-    } catch (_) {}
+  } catch (e) { log.warning('Sync fail for $stableId: $e');
+  } finally { if (establishedByUs) { try { await device.disconnect(); } catch (_) {} } }
+}
+
+Future<Uint8List> robustRead(BluetoothCharacteristic char) async {
+  for (int i = 0; i < 3; i++) {
+    try { return Uint8List.fromList(await char.read().timeout(const Duration(seconds: 5))); }
+    catch (_) { await Future.delayed(const Duration(seconds: 1)); }
   }
+  return Uint8List.fromList([]);
 }
