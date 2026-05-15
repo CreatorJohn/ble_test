@@ -344,8 +344,61 @@ class DiscoveryScreen extends ConsumerWidget {
     String content,
   ) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final remoteId = device.remoteId;
+    final stableId = device.stableId;
+
     try {
-      final bleDevice = BluetoothDevice.fromId(device.remoteId);
+      // 1. Check if they are already connected to US (Inbound)
+      if (BLEAdvertiser.isDeviceConnected(remoteId)) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text("Sending via existing connection...")),
+        );
+
+        final relayPayload = await MessageHandler.getRelayWrappedPayload(
+          stableId,
+          text: content,
+        );
+
+        if (relayPayload == null) {
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text("Handshake Required: No public key.")),
+          );
+          return;
+        }
+
+        final messageId = relayPayload[9];
+        final chunks = ChunkedTransferManager.generateChunks(
+          relayPayload,
+          messageId,
+          maxChunkSize: 200,
+        );
+
+        int sent = 0;
+        for (final chunk in chunks) {
+          await BLEAdvertiser.sendNotification(
+            characteristicUuid: BLEAdvertiser.messageCharUuid,
+            value: chunk,
+            deviceId: remoteId,
+          );
+          sent++;
+          // Small delay for buffer stability
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
+
+        await MessageHandler.handleOutgoingMessage(
+          receiverStableId: stableId,
+          content: content,
+          messageId: messageId,
+        );
+
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text("Sent! ($sent chunks via Notify)")),
+        );
+        return;
+      }
+
+      // 2. Standard Mesh Push (Connect to THEM)
+      final bleDevice = BluetoothDevice.fromId(remoteId);
 
       scaffoldMessenger.showSnackBar(
         SnackBar(
@@ -396,7 +449,7 @@ class DiscoveryScreen extends ConsumerWidget {
 
         if (messageChar != null) {
           final relayPayload = await MessageHandler.getRelayWrappedPayload(
-            device.stableId,
+            stableId,
             text: content,
           );
 
@@ -430,7 +483,7 @@ class DiscoveryScreen extends ConsumerWidget {
           }
 
           await MessageHandler.handleOutgoingMessage(
-            receiverStableId: device.stableId,
+            receiverStableId: stableId,
             content: content,
             messageId: messageId,
           );
