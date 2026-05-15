@@ -352,8 +352,8 @@ Future<void> _startServiceLogic(
     }
   });
 
-  const scanDuration = Duration(seconds: 20);
-  const waitDuration = Duration(seconds: 80);
+  const scanDuration = Duration(seconds: 10);
+  const waitDuration = Duration(seconds: 50);
   DateTime? lastScanStartTime;
 
   Future<void> startSafeScan() async {
