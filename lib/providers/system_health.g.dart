@@ -41,7 +41,7 @@ final class SystemHealthProvider
   }
 }
 
-String _$systemHealthHash() => r'48ca3015d605bf8611d0b5b1896190a56c04040a';
+String _$systemHealthHash() => r'bd20fb3c32d53d7f546c35ba1309e3347b9f48bb';
 
 abstract class _$SystemHealth extends $Notifier<SystemHealthState> {
   SystemHealthState build();

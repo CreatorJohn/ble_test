@@ -104,8 +104,10 @@ class MessageHandler {
               'We are the destination for relay message $msgId from $originSenderId',
             );
 
-            // Generate and push ACK
-            _pushAck(directSenderId, originSenderId, msgId);
+            // Generate and push ACK (don't await to avoid blocking message processing, but handle errors)
+            _pushAck(directSenderId, originSenderId, msgId).catchError((e) {
+              _log.warning('Failed to send inbound ACK for $msgId: $e');
+            });
 
             final innerPayload = fullData.sublist(11);
             decryptedData = await _decryptMessage(originSenderId, innerPayload);

@@ -155,6 +155,7 @@ Future<void> _startServiceLogic(
 
   final isar = IsarService();
   await isar.initialize();
+  await isar.pruneDatabase();
   MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
@@ -287,6 +288,13 @@ Future<void> _startServiceLogic(
     isScanOperationInProgress = true;
     try {
       if (!await FlutterBluePlus.isSupported) return;
+
+      // Handle Bluetooth "Off" State Gracefully
+      if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+        log.info('Bluetooth is OFF, skipping scan...');
+        return;
+      }
+
       final needsSync = await isar.db.foundDevices
           .filter()
           .publicKeyIsNull()
@@ -299,14 +307,6 @@ Future<void> _startServiceLogic(
         }
       }
 
-      if (await FlutterBluePlus.adapterState.first !=
-          BluetoothAdapterState.on) {
-        await FlutterBluePlus.adapterState
-            .where((s) => s == BluetoothAdapterState.on)
-            .first
-            .timeout(const Duration(seconds: 15))
-            .catchError((_) => BluetoothAdapterState.off);
-      }
       if (FlutterBluePlus.isScanningNow) {
         await FlutterBluePlus.stopScan();
         await Future.delayed(const Duration(seconds: 1));

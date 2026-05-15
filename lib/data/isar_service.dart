@@ -86,4 +86,35 @@ class IsarService {
       await db.messages.clear();
     });
   }
+
+  Future<void> pruneDatabase() async {
+    final oneMonthAgo = DateTime.now().subtract(const Duration(days: 30));
+
+    // Find devices not seen in the last 30 days
+    final inactiveDevices = await db.foundDevices
+        .filter()
+        .lastSeenLessThan(oneMonthAgo)
+        .findAll();
+
+    if (inactiveDevices.isEmpty) return;
+
+    final inactiveStableIds = inactiveDevices.map((d) => d.stableId).toList();
+
+    await db.writeTxn(() async {
+      // Delete messages older than 30 days for these inactive devices
+      final messagesToDelete = await db.messages
+          .filter()
+          .timestampLessThan(oneMonthAgo)
+          .and()
+          .group((q) => q
+              .anyOf(inactiveStableIds, (q, int id) => q.senderStableIdEqualTo(id))
+              .or()
+              .anyOf(inactiveStableIds, (q, int id) => q.receiverStableIdEqualTo(id)))
+          .findAll();
+
+      if (messagesToDelete.isNotEmpty) {
+        await db.messages.deleteAll(messagesToDelete.map((m) => m.id).toList());
+      }
+    });
+  }
 }

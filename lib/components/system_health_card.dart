@@ -1,6 +1,7 @@
 import 'package:ble_test/providers/system_health.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -71,6 +72,15 @@ class SystemHealthCard extends ConsumerWidget {
                 buttonLabel: "Enable",
                 onPressed: () async {
                   await Geolocator.openLocationSettings();
+                  ref.read(systemHealthProvider.notifier).checkHealth();
+                },
+              ),
+            if (!health.isBluetoothOn)
+              _ActionItem(
+                label: "Bluetooth is OFF",
+                buttonLabel: "Enable",
+                onPressed: () async {
+                  await FlutterBluePlus.turnOn();
                   ref.read(systemHealthProvider.notifier).checkHealth();
                 },
               ),

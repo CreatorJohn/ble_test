@@ -1,5 +1,6 @@
 import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -12,6 +13,7 @@ class SystemHealthState {
   final bool hasLocationAlways;
   final bool hasNotificationPermission;
   final bool isLocationEnabled;
+  final bool isBluetoothOn;
   final bool isChecking;
 
   SystemHealthState({
@@ -20,6 +22,7 @@ class SystemHealthState {
     required this.hasLocationAlways,
     required this.hasNotificationPermission,
     required this.isLocationEnabled,
+    required this.isBluetoothOn,
     this.isChecking = false,
   });
 
@@ -28,7 +31,8 @@ class SystemHealthState {
       !isBatterySaverOn &&
       hasLocationAlways &&
       hasNotificationPermission &&
-      isLocationEnabled;
+      isLocationEnabled &&
+      isBluetoothOn;
 }
 
 @riverpod
@@ -42,6 +46,7 @@ class SystemHealth extends _$SystemHealth {
       hasLocationAlways: false,
       hasNotificationPermission: false,
       isLocationEnabled: false,
+      isBluetoothOn: false,
       isChecking: true,
     );
   }
@@ -53,6 +58,7 @@ class SystemHealth extends _$SystemHealth {
       hasLocationAlways: state.hasLocationAlways,
       hasNotificationPermission: state.hasNotificationPermission,
       isLocationEnabled: state.isLocationEnabled,
+      isBluetoothOn: state.isBluetoothOn,
       isChecking: true,
     );
 
@@ -63,6 +69,7 @@ class SystemHealth extends _$SystemHealth {
     final locationStatus = await Permission.locationAlways.status;
     final notificationStatus = await Permission.notification.status;
     final isLocationEnabled = await Geolocator.isLocationServiceEnabled();
+    final bluetoothStatus = await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on;
 
     state = SystemHealthState(
       isBatteryOptimized: !isOptimized,
@@ -70,6 +77,7 @@ class SystemHealth extends _$SystemHealth {
       hasLocationAlways: locationStatus.isGranted,
       hasNotificationPermission: notificationStatus.isGranted,
       isLocationEnabled: isLocationEnabled,
+      isBluetoothOn: bluetoothStatus,
       isChecking: false,
     );
   }
