@@ -38,6 +38,7 @@ class BLEAdvertiser {
   static Uint8List? _currentProfilePic;
   static Uint8List? _currentFullHash;
   static final Set<String> _connectedDevices = {};
+  static final Map<String, int> _deviceMtu = {};
   static final StreamController<Map<String, bool>> _connectionController =
       StreamController.broadcast();
 
@@ -45,6 +46,7 @@ class BLEAdvertiser {
   static bool get hasInboundConnections => _connectedDevices.isNotEmpty;
   static bool isDeviceConnected(String deviceId) =>
       _connectedDevices.contains(deviceId);
+  static int getMtuForDevice(String deviceId) => _deviceMtu[deviceId] ?? 23;
   static Stream<Map<String, bool>> get connectionStream =>
       _connectionController.stream;
 
@@ -170,8 +172,14 @@ class BLEAdvertiser {
         _connectedDevices.add(deviceId);
       } else {
         _connectedDevices.remove(deviceId);
+        _deviceMtu.remove(deviceId);
       }
       _connectionController.add({deviceId: connected});
+    });
+
+    BlePeripheral.setMtuChangeCallback((deviceId, mtu) {
+      _log.info('MTU Change | Device: $deviceId | New MTU: $mtu');
+      _deviceMtu[deviceId] = mtu;
     });
 
     BlePeripheral.setWriteRequestCallback((
@@ -271,11 +279,15 @@ class BLEAdvertiser {
         if (charUuidLower == profilePicCharUuid.toLowerCase() && offset == 0) {
           _log.info('Profile Picture Read detected from $deviceId. Preparing stream...');
           
+          // Calculate chunk size based on MTU
+          final mtu = getMtuForDevice(deviceId);
+          final chunkSize = (mtu - 3).clamp(20, 500);
+
           // We handle the streaming asynchronously
-          _streamProfilePicture(deviceId);
+          _streamProfilePicture(deviceId, chunkSize);
           
           // Prepare header: [Magic(0xAA), Size (2 bytes), ChunkCount (2 bytes)]
-          final header = _getProfileHeaderSync();
+          final header = _getProfileHeaderSync(chunkSize);
           if (header != null) {
             return ReadRequestResult(value: header, status: 0);
           }
@@ -289,12 +301,11 @@ class BLEAdvertiser {
     return true;
   }
 
-  static Uint8List? _getProfileHeaderSync() {
+  static Uint8List? _getProfileHeaderSync(int chunkSize) {
     // Note: This is synchronous to respond to GATT read immediately
     if (_currentProfilePic == null || _currentProfilePic!.isEmpty) return null;
     
     final int size = _currentProfilePic!.length;
-    const int chunkSize = 200;
     final int chunkCount = (size / chunkSize).ceil();
     
     final header = Uint8List(5);
@@ -306,7 +317,10 @@ class BLEAdvertiser {
     return header;
   }
 
-  static Future<void> _streamProfilePicture(String deviceId) async {
+  static Future<void> _streamProfilePicture(
+    String deviceId,
+    int chunkSize,
+  ) async {
     try {
       if (_currentProfilePic == null || _currentProfilePic!.isEmpty) {
         _log.warning('Stream Profile Error: Local picture empty');
@@ -314,13 +328,12 @@ class BLEAdvertiser {
       }
 
       final bytes = _currentProfilePic!;
-      const int chunkSize = 200;
       final int totalSize = bytes.length;
       
-      _log.info('Starting profile stream to $deviceId ($totalSize bytes)');
+      _log.info('Starting profile stream to $deviceId ($totalSize bytes, Chunk size: $chunkSize)');
       
       // Wait for central to enable notifications and prepare
-      await Future.delayed(const Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 300));
 
       int offset = 0;
       int chunkIdx = 0;

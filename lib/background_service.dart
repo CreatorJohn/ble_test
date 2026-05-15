@@ -791,8 +791,8 @@ Future<void> _fetchFullMetadata(
             });
 
             try {
-              // 4. Wait for transfer to complete
-              await transferCompleter.future.timeout(const Duration(seconds: 45));
+              // 4. Wait for transfer to complete (30s limit)
+              await transferCompleter.future.timeout(const Duration(seconds: 30));
               
               if (imageBuffer.length >= totalExpectedBytes) {
                 final finalBytes = Uint8List.fromList(imageBuffer.sublist(0, totalExpectedBytes));
