@@ -51,6 +51,7 @@ void onStart(ServiceInstance service) async {
   Logger.root.onRecord.listen((r) => service.invoke('log', {
     'message': '[BG] [${r.time.hour}:${r.time.minute}:${r.time.second}] [${r.level.name}] ${r.loggerName}: ${r.message}',
     'level': r.level.name,
+    'loggerName': r.loggerName,
   }));
 
   log.info('Service isolate started');
@@ -103,6 +104,23 @@ Future<void> _startServiceLogic(ServiceInstance service, BLEAdvertiser advertise
   final myStableId = await ProfileManager.getStableDeviceId();
   final Map<int, BluetoothDevice> syncQueue = {};
   final Map<int, DateTime> lastSyncAttempt = {};
+  final List<Map<String, dynamic>> messageQueue = [];
+
+  Future<void> processMessageQueue() async {
+    if (isScanOperationInProgress || messageQueue.isEmpty) return;
+    final toSend = List<Map<String, dynamic>>.from(messageQueue);
+    messageQueue.clear();
+    for (final msg in toSend) {
+      try {
+        await MessageHandler.sendMessage(
+          targetStableId: msg['targetId'],
+          content: msg['content'],
+        );
+      } catch (e) {
+        log.warning('Failed to send queued message to ${msg['targetId']}: $e');
+      }
+    }
+  }
 
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isar.isOpen) return;
@@ -195,6 +213,7 @@ Future<void> _startServiceLogic(ServiceInstance service, BLEAdvertiser advertise
       }
     } finally {
       isScanOperationInProgress = false;
+      await processMessageQueue();
       if (needsTrailingUpdate && advertisingOn) updateAd();
     }
   }
@@ -228,6 +247,14 @@ Future<void> _startServiceLogic(ServiceInstance service, BLEAdvertiser advertise
     service.invoke("advertisingChange", {"active": false});
   });
   service.on("updateLocalProfile").listen((_) => updateAd());
+  service.on('sendMessage').listen((e) async {
+    final targetId = e?['targetId'];
+    final content = e?['content'];
+    if (targetId is int && content is String) {
+      messageQueue.add({'targetId': targetId, 'content': content});
+      if (!isScanOperationInProgress) await processMessageQueue();
+    }
+  });
 }
 
 Future<void> _fetchFullMetadata(BluetoothDevice device, IsarService isar, int stableId, Logger log) async {
@@ -266,12 +293,19 @@ Future<void> _fetchFullMetadata(BluetoothDevice device, IsarService isar, int st
       if (s.uuid.toString().toLowerCase() == BLEAdvertiser.serviceUuid.toLowerCase()) {
         for (final c in s.characteristics) {
           final id = c.uuid.toString().toLowerCase();
-          if (id == BLEAdvertiser.profilePicCharUuid.toLowerCase()) picChar = c;
-          else if (id == BLEAdvertiser.fullHashCharUuid.toLowerCase()) hashChar = c;
-          else if (id == BLEAdvertiser.locationCharUuid.toLowerCase()) locChar = c;
-          else if (id == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) keyChar = c;
-          else if (id == BLEAdvertiser.nameCharUuid.toLowerCase()) nameChar = c;
-          else if (id == BLEAdvertiser.messageCharUuid.toLowerCase()) messageChar = c;
+          if (id == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
+            picChar = c;
+          } else if (id == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
+            hashChar = c;
+          } else if (id == BLEAdvertiser.locationCharUuid.toLowerCase()) {
+            locChar = c;
+          } else if (id == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
+            keyChar = c;
+          } else if (id == BLEAdvertiser.nameCharUuid.toLowerCase()) {
+            nameChar = c;
+          } else if (id == BLEAdvertiser.messageCharUuid.toLowerCase()) {
+            messageChar = c;
+          }
         }
       }
     }
@@ -312,7 +346,7 @@ Future<void> _fetchFullMetadata(BluetoothDevice device, IsarService isar, int st
               try {
                 await comp.future.timeout(const Duration(seconds: 30));
                 if (buffer.length >= expected) dev.profilePicture = Uint8List.fromList(buffer.sublist(0, expected));
-              } finally { await sub.cancel(); await picChar.setNotifyValue(false).catchError((_) {}); }
+              } finally { await sub.cancel(); await picChar.setNotifyValue(false).catchError((_) => false); }
             }
           } catch (_) {}
         }

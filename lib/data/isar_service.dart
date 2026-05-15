@@ -42,6 +42,16 @@ class IsarService {
     );
   }
 
+  Stream<List<Message>> watchMessagesWithDevice(int stableId) {
+    return db.messages
+        .filter()
+        .senderStableIdEqualTo(stableId)
+        .or()
+        .receiverStableIdEqualTo(stableId)
+        .sortByTimestampDesc()
+        .watch(fireImmediately: true);
+  }
+
   Future<void> putFoundDevice(FoundDevice device) async {
     await db.writeTxn(() async {
       await db.foundDevices.put(device);
@@ -70,7 +80,7 @@ class IsarService {
     return await db.foundDevices.filter().remoteIdEqualTo(remoteId).findFirst();
   }
 
-  Future<void> clearDevices() async {
+  Future<void> clearAllData() async {
     await db.writeTxn(() async {
       await db.foundDevices.clear();
       await db.messages.clear();

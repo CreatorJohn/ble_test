@@ -269,3 +269,79 @@ final class MessagesProvider
 }
 
 String _$messagesHash() => r'692355e034e57ca435ef255c9ca7b9faa24a4198';
+
+@ProviderFor(messagesWithDevice)
+final messagesWithDeviceProvider = MessagesWithDeviceFamily._();
+
+final class MessagesWithDeviceProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<Message>>,
+          List<Message>,
+          Stream<List<Message>>
+        >
+    with $FutureModifier<List<Message>>, $StreamProvider<List<Message>> {
+  MessagesWithDeviceProvider._({
+    required MessagesWithDeviceFamily super.from,
+    required int super.argument,
+  }) : super(
+         retry: null,
+         name: r'messagesWithDeviceProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
+
+  @override
+  String debugGetCreateSourceHash() => _$messagesWithDeviceHash();
+
+  @override
+  String toString() {
+    return r'messagesWithDeviceProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  $StreamProviderElement<List<Message>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<List<Message>> create(Ref ref) {
+    final argument = this.argument as int;
+    return messagesWithDevice(ref, argument);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is MessagesWithDeviceProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$messagesWithDeviceHash() =>
+    r'3a92c16d18c481785e2c8838794c7cb2d5a8d7dd';
+
+final class MessagesWithDeviceFamily extends $Family
+    with $FunctionalFamilyOverride<Stream<List<Message>>, int> {
+  MessagesWithDeviceFamily._()
+    : super(
+        retry: null,
+        name: r'messagesWithDeviceProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  MessagesWithDeviceProvider call(int stableId) =>
+      MessagesWithDeviceProvider._(argument: stableId, from: this);
+
+  @override
+  String toString() => r'messagesWithDeviceProvider';
+}

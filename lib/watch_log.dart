@@ -7,7 +7,7 @@ import 'package:logging/logging.dart' show Logger, Level;
 typedef LogListener =
     void Function(DateTime time, Level level, String name, String message);
 
-typedef LogRecord = (String content, Level level);
+typedef LogRecord = (String content, Level level, String loggerName);
 
 class WatchLog {
   static bool _initialized = false;
@@ -31,23 +31,24 @@ class WatchLog {
       final message =
           '[${record.time}] [${record.level.name}] ${record.loggerName}: ${record.message}';
 
-      _addLog(message, record.level);
+      _addLog(message, record.level, record.loggerName);
     });
 
     // 2. Listen for logs from the background service
     FlutterBackgroundService().on('log').listen((event) {
       final message = event?['message'] as String?;
       final levelName = event?['level'] as String?;
+      final loggerName = event?['loggerName'] as String? ?? 'Unknown';
       if (message != null) {
         final level = _parseLevel(levelName);
-        _addLog(message, level);
+        _addLog(message, level, loggerName);
       }
     });
   }
 
-  static void _addLog(String message, Level level) {
-    _logStream.add((message, level));
-    _logBuffer.add((message, level));
+  static void _addLog(String message, Level level, String loggerName) {
+    _logStream.add((message, level, loggerName));
+    _logBuffer.add((message, level, loggerName));
     // Keep buffer manageable
     if (_logBuffer.length > 1000) {
       _logBuffer.removeAt(0);

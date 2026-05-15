@@ -50,3 +50,8 @@ Stream<List<FoundDevice>> discoveredDevices(Ref ref) {
 Stream<List<Message>> messages(Ref ref) {
   return ref.watch(isarServiceProvider).watchMessages();
 }
+
+@riverpod
+Stream<List<Message>> messagesWithDevice(Ref ref, int stableId) {
+  return ref.watch(isarServiceProvider).watchMessagesWithDevice(stableId);
+}

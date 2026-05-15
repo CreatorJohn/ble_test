@@ -50,6 +50,7 @@ const MessageSchema = CollectionSchema(
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
+    r'wasSent': PropertySchema(id: 9, name: r'wasSent', type: IsarType.bool),
   },
 
   estimateSize: _messageEstimateSize,
@@ -138,6 +139,7 @@ void _messageSerialize(
   writer.writeLong(offsets[6], object.receiverStableId);
   writer.writeLong(offsets[7], object.senderStableId);
   writer.writeDateTime(offsets[8], object.timestamp);
+  writer.writeBool(offsets[9], object.wasSent);
 }
 
 Message _messageDeserialize(
@@ -157,6 +159,7 @@ Message _messageDeserialize(
   object.receiverStableId = reader.readLong(offsets[6]);
   object.senderStableId = reader.readLong(offsets[7]);
   object.timestamp = reader.readDateTime(offsets[8]);
+  object.wasSent = reader.readBool(offsets[9]);
   return object;
 }
 
@@ -185,6 +188,8 @@ P _messageDeserializeProp<P>(
       return (reader.readLong(offset)) as P;
     case 8:
       return (reader.readDateTime(offset)) as P;
+    case 9:
+      return (reader.readBool(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1256,6 +1261,16 @@ extension MessageQueryFilter
       );
     });
   }
+
+  QueryBuilder<Message, Message, QAfterFilterCondition> wasSentEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'wasSent', value: value),
+      );
+    });
+  }
 }
 
 extension MessageQueryObject
@@ -1358,6 +1373,18 @@ extension MessageQuerySortBy on QueryBuilder<Message, Message, QSortBy> {
   QueryBuilder<Message, Message, QAfterSortBy> sortByTimestampDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByWasSent() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasSent', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByWasSentDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasSent', Sort.desc);
     });
   }
 }
@@ -1471,6 +1498,18 @@ extension MessageQuerySortThenBy
       return query.addSortBy(r'timestamp', Sort.desc);
     });
   }
+
+  QueryBuilder<Message, Message, QAfterSortBy> thenByWasSent() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasSent', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> thenByWasSentDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasSent', Sort.desc);
+    });
+  }
 }
 
 extension MessageQueryWhereDistinct
@@ -1528,6 +1567,12 @@ extension MessageQueryWhereDistinct
   QueryBuilder<Message, Message, QDistinct> distinctByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'timestamp');
+    });
+  }
+
+  QueryBuilder<Message, Message, QDistinct> distinctByWasSent() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'wasSent');
     });
   }
 }
@@ -1591,6 +1636,12 @@ extension MessageQueryProperty
   QueryBuilder<Message, DateTime, QQueryOperations> timestampProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'timestamp');
+    });
+  }
+
+  QueryBuilder<Message, bool, QQueryOperations> wasSentProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'wasSent');
     });
   }
 }

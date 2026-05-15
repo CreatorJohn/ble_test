@@ -26,15 +26,22 @@ class _LogViewerState extends State<LogViewer> {
     });
   }
 
-  Color _getColor(Level level) {
-    if (level == Level.INFO) return Colors.green;
-    if (level == Level.WARNING) return Colors.black;
-    if (level == Level.SEVERE) return Colors.red;
-    if (level == Level.FINE || level == Level.FINER || level == Level.FINEST) {
-      return Colors.blue;
+  Color _getColor(Level level, String loggerName) {
+    if (level >= Level.SEVERE) return Colors.red;
+    if (level >= Level.WARNING) return Colors.deepOrange;
+
+    if (loggerName.contains('MessageHandler')) return Colors.blue;
+    if (loggerName.contains('BLEAdvertiser')) return Colors.orange[800]!;
+    if (loggerName.contains('BackgroundService') ||
+        loggerName.contains('BLEDiscoverer')) {
+      return Colors.teal;
     }
-    if (level == Level.CONFIG) return Colors.purple;
-    if (level == Level.SHOUT) return Colors.orange;
+    if (loggerName.contains('ChunkedTransferManager')) return Colors.indigo;
+    if (loggerName.contains('ProfileManager')) return Colors.deepPurple;
+
+    if (level == Level.INFO) return Colors.green[700]!;
+    if (level <= Level.FINE) return Colors.grey;
+
     return Colors.black;
   }
 
@@ -104,7 +111,10 @@ class _LogViewerState extends State<LogViewer> {
                 final log = logs[index];
                 return Text(
                   log.$1,
-                  style: TextStyle(color: _getColor(log.$2), fontSize: 12),
+                  style: TextStyle(
+                    color: _getColor(log.$2, log.$3),
+                    fontSize: 12,
+                  ),
                 );
               },
             ),

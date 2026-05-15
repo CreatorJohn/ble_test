@@ -18,6 +18,7 @@ class Message {
   List<int>? data;
 
   bool isDelivered = false;
+  bool wasSent = false;
   @Index()
   int? messageId;
 }

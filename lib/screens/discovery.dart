@@ -1,13 +1,9 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:ble_test/background_service.dart';
-import 'package:ble_test/ble_advertiser.dart';
-import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/components/scaffold_wrapper.dart';
 import 'package:ble_test/components/system_health_card.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
-import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/providers/advertising_name.dart';
 import 'package:ble_test/providers/found_devices.dart';
 import 'package:ble_test/router.dart';
@@ -236,10 +232,10 @@ class DiscoveryScreen extends ConsumerWidget {
                                     _showProfileDialog(context, item),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.send),
-                                tooltip: "Send Message",
+                                icon: const Icon(Icons.message_outlined),
+                                tooltip: "Messages",
                                 onPressed: () =>
-                                    _sendMessageDialog(context, ref, item),
+                                    _showMessageHistoryDialog(context, ref, item),
                               ),
                             ],
                           ),
@@ -304,7 +300,7 @@ class DiscoveryScreen extends ConsumerWidget {
     );
   }
 
-  void _sendMessageDialog(
+  void _showMessageHistoryDialog(
     BuildContext context,
     WidgetRef ref,
     FoundDevice device,
@@ -312,215 +308,141 @@ class DiscoveryScreen extends ConsumerWidget {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Message to ${device.name ?? 'Device'}"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "Enter message"),
+      builder: (context) => Dialog.fullscreen(
+        child: Column(
+          children: [
+            AppBar(
+              title: Text("Chat with ${device.name ?? 'Device'}"),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            Expanded(
+              child: ref.watch(messagesWithDeviceProvider(device.stableId)).when(
+                    data: (messages) {
+                      if (messages.isEmpty) {
+                        return const Center(child: Text("No messages yet."));
+                      }
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(8),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = messages[index];
+                          final isReceived = msg.isReceived;
+                          return ListTile(
+                            title: msg.isImage && msg.data != null
+                                ? Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text("[Image Received]"),
+                                      const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () =>
+                                            _showFullImage(context, msg.data!),
+                                        child: Container(
+                                          height: 150,
+                                          width: 150,
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            image: DecorationImage(
+                                              image: MemoryImage(
+                                                Uint8List.fromList(msg.data!),
+                                              ),
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(msg.content),
+                            subtitle: Text(
+                              DateFormat('HH:mm:ss').format(msg.timestamp),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            leading: Icon(
+                              isReceived ? Icons.call_received : Icons.call_made,
+                              color: isReceived ? Colors.green : Colors.blue,
+                            ),
+                            trailing: !isReceived
+                                ? Icon(
+                                    !msg.wasSent
+                                        ? Icons.schedule
+                                        : (msg.isDelivered
+                                            ? Icons.done_all
+                                            : Icons.check),
+                                    size: 16,
+                                    color: msg.isDelivered
+                                        ? Colors.blue
+                                        : Colors.grey,
+                                  )
+                                : null,
+                          );
+                        },
+                      );
+                    },
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (err, stack) => Center(child: Text('Error: $err')),
+                  ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        hintText: "Enter message...",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: () {
+                      final content = controller.text.trim();
+                      if (content.isNotEmpty) {
+                        FlutterBackgroundService().invoke('sendMessage', {
+                          'targetId': device.stableId,
+                          'content': content,
+                        });
+                        controller.clear();
+                      }
+                    },
+                    icon: const Icon(Icons.send),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              final content = controller.text.trim();
-              if (content.isEmpty) return;
-
-              Navigator.pop(context);
-              _performSendMessage(context, device, content);
-            },
-            child: const Text("Send"),
-          ),
-        ],
       ),
     );
   }
 
-  Future<void> _performSendMessage(
-    BuildContext context,
-    FoundDevice device,
-    String content,
-  ) async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final remoteId = device.remoteId;
-    final stableId = device.stableId;
-
-    try {
-      // 1. Check if they are already connected to US (Inbound)
-      if (BLEAdvertiser.isDeviceConnected(remoteId)) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text("Sending via existing connection...")),
-        );
-
-        final relayPayload = await MessageHandler.getRelayWrappedPayload(
-          stableId,
-          text: content,
-        );
-
-        if (relayPayload == null) {
-          scaffoldMessenger.showSnackBar(
-            const SnackBar(content: Text("Handshake Required: No public key.")),
-          );
-          return;
-        }
-
-        final messageId = relayPayload[9];
-        final chunks = ChunkedTransferManager.generateChunks(
-          relayPayload,
-          messageId,
-          maxChunkSize: 200,
-        );
-
-        int sent = 0;
-        for (final chunk in chunks) {
-          await BLEAdvertiser.sendNotification(
-            characteristicUuid: BLEAdvertiser.messageCharUuid,
-            value: chunk,
-            deviceId: remoteId,
-          );
-          sent++;
-          // Small delay for buffer stability
-          await Future.delayed(const Duration(milliseconds: 50));
-        }
-
-        await MessageHandler.handleOutgoingMessage(
-          receiverStableId: stableId,
-          content: content,
-          messageId: messageId,
-        );
-
-        scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text("Sent! ($sent chunks via Notify)")),
-        );
-        return;
-      }
-
-      // 2. Standard Mesh Push (Connect to THEM)
-      final bleDevice = BluetoothDevice.fromId(remoteId);
-
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text("Connecting to ${device.name ?? 'device'}..."),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      await bleDevice.connect(
-        timeout: const Duration(seconds: 15),
-        autoConnect: false,
-        license: License.free,
-      );
-
-      // --- MTU Negotiation Start ---
-      if (Platform.isAndroid) {
-        try {
-          await bleDevice.requestMtu(517);
-        } catch (e) {
-          debugPrint('MTU Request failed: $e');
-        }
-      }
-
-      final mtu = await bleDevice.mtu.first.timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => 23,
-      );
-      final maxChunkSize = (mtu - 10).clamp(20, 500);
-      debugPrint('Negotiated MTU: $mtu, Chunk size: $maxChunkSize');
-      // --- MTU Negotiation End ---
-
-      try {
-        final services = await bleDevice.discoverServices();
-        BluetoothCharacteristic? messageChar;
-
-        for (final service in services) {
-          if (service.uuid.toString().toLowerCase() ==
-              BLEAdvertiser.serviceUuid.toLowerCase()) {
-            for (final char in service.characteristics) {
-              if (char.uuid.toString().toLowerCase() ==
-                  BLEAdvertiser.messageCharUuid.toLowerCase()) {
-                messageChar = char;
-                break;
-              }
-            }
-          }
-        }
-
-        if (messageChar != null) {
-          final relayPayload = await MessageHandler.getRelayWrappedPayload(
-            stableId,
-            text: content,
-          );
-
-          if (relayPayload == null) {
-            scaffoldMessenger.showSnackBar(
-              const SnackBar(
-                content: Text(
-                  "Handshake Required: Still fetching encryption keys for this peer. Please wait a moment.",
-                ),
-                duration: Duration(seconds: 4),
-              ),
-            );
-            return;
-          }
-
-          scaffoldMessenger.showSnackBar(
-            const SnackBar(content: Text("Sending message...")),
-          );
-
-          final messageId = relayPayload[9];
-          final chunks = ChunkedTransferManager.generateChunks(
-            relayPayload,
-            messageId,
-            maxChunkSize: maxChunkSize,
-          );
-
-          int sent = 0;
-          for (final chunk in chunks) {
-            await messageChar.write(chunk, withoutResponse: false);
-            sent++;
-          }
-
-          await MessageHandler.handleOutgoingMessage(
-            receiverStableId: stableId,
-            content: content,
-            messageId: messageId,
-          );
-          scaffoldMessenger.showSnackBar(
-            SnackBar(content: Text("Encrypted message sent! ($sent chunks)")),
-          );
-        } else {
-          scaffoldMessenger.showSnackBar(
-            const SnackBar(
-              content: Text("Error: This device does not support messaging."),
+  void _showFullImage(BuildContext context, List<int> data) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.memory(Uint8List.fromList(data)),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
             ),
-          );
-        }
-      } finally {
-        await bleDevice.disconnect();
-      }
-    } catch (e) {
-      String errorMessage = "Failed to send message: $e";
-      if (e.toString().contains("connection canceled") ||
-          e.toString().contains("10")) {
-        errorMessage =
-            "Connection Rejected: The peer declined the connection request.";
-      } else if (e.toString().contains("Timed out")) {
-        errorMessage =
-            "Connection Timed Out: The peer is out of range or busy.";
-      }
-
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: context.mounted
-              ? Theme.of(context).colorScheme.error
-              : null,
-          duration: const Duration(seconds: 5),
+          ],
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _showResetConfirmation(BuildContext context, WidgetRef ref) {
@@ -529,7 +451,7 @@ class DiscoveryScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text("Reset Background Service?"),
         content: const Text(
-          "This will stop the background scanner and delete all discovered devices. This action cannot be undone.",
+          "This will stop the background scanner and delete all discovered devices and messages. This action cannot be undone.",
         ),
         actions: [
           TextButton(
@@ -543,7 +465,7 @@ class DiscoveryScreen extends ConsumerWidget {
               service.invoke("stopService");
 
               // 2. Clear the database
-              await IsarService().clearDevices();
+              await IsarService().clearAllData();
 
               // 3. Restart the service
               await initializeBackgroundService();

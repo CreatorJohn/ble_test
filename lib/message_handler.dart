@@ -192,6 +192,42 @@ class MessageHandler {
     });
   }
 
+  static Future<void> sendMessage({
+    required int targetStableId,
+    required String content,
+  }) async {
+    final isar = IsarService();
+    final device = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(targetStableId)
+        .findFirst();
+
+    if (device == null) {
+      throw Exception("Device not found in database");
+    }
+
+    final relayPayload = await getRelayWrappedPayload(
+      targetStableId,
+      text: content,
+    );
+
+    if (relayPayload == null) {
+      throw Exception("Encryption handshake required");
+    }
+
+    final messageId = relayPayload[9];
+
+    // _pushData handles the "if connected" logic
+    await _pushData(device.remoteId, targetStableId, relayPayload, messageId);
+
+    await handleOutgoingMessage(
+      receiverStableId: targetStableId,
+      content: content,
+      messageId: messageId,
+      wasSent: true,
+    );
+  }
+
   static Future<void> _forwardRelayPayload(
     Uint8List payload,
     int targetId,
@@ -253,38 +289,26 @@ class MessageHandler {
     String remoteId,
     int stableId,
     Uint8List payload,
-    int messageId, {
-    int maxChunkSize = 200,
-  }) async {
-    // 1. Check if they are already connected to US (Inbound)
-    if (BLEAdvertiser.isDeviceConnected(remoteId)) {
-      _log.info('Using Notify-based push for $stableId (Already connected)');
-      final chunks = ChunkedTransferManager.generateChunks(
-        payload,
-        messageId,
-        maxChunkSize: maxChunkSize,
-      );
-      for (final chunk in chunks) {
-        await BLEAdvertiser.sendNotification(
-          characteristicUuid: BLEAdvertiser.messageCharUuid,
-          value: chunk,
-          deviceId: remoteId,
-        );
-        // Small delay to prevent buffer saturation on Notify-based push
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      return;
-    }
-
-    // 2. Standard Mesh Push (Connect to THEM)
+    int messageId,
+  ) async {
     final device = BluetoothDevice.fromId(remoteId);
+    bool alreadyConnected = false;
+
     try {
-      _log.info('Connecting to neighbor $stableId for push...');
-      await device.connect(
-        timeout: const Duration(seconds: 15),
-        autoConnect: false,
-        license: License.free,
+      final state = await device.connectionState.first.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => BluetoothConnectionState.disconnected,
       );
+      alreadyConnected = state == BluetoothConnectionState.connected;
+
+      if (!alreadyConnected) {
+        _log.info('Connecting to neighbor $stableId for push...');
+        await device.connect(
+          timeout: const Duration(seconds: 15),
+          autoConnect: false,
+          license: License.free,
+        );
+      }
 
       if (Platform.isAndroid) {
         try {
@@ -328,9 +352,11 @@ class MessageHandler {
     } catch (e) {
       _log.warning('Failed to push data to $stableId: $e');
     } finally {
-      try {
-        await device.disconnect();
-      } catch (_) {}
+      if (!alreadyConnected) {
+        try {
+          await device.disconnect();
+        } catch (_) {}
+      }
     }
   }
 
@@ -350,6 +376,7 @@ class MessageHandler {
     bool isImage = false,
     Uint8List? imageData,
     int? messageId,
+    bool wasSent = false,
   }) async {
     try {
       final isar = IsarService();
@@ -363,7 +390,8 @@ class MessageHandler {
         ..isReceived = false
         ..isImage = isImage
         ..data = imageData
-        ..messageId = messageId;
+        ..messageId = messageId
+        ..wasSent = wasSent;
 
       await isar.putMessage(message);
       _log.info('Saved outgoing message to $receiverStableId');
