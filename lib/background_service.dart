@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -210,6 +211,13 @@ Future<void> _startServiceLogic(
 
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isarService.isOpen) return;
+
+    // If someone connects to us while we are scanning, stop scanning to avoid radio conflict
+    if (BLEAdvertiser.hasInboundConnections && FlutterBluePlus.isScanningNow) {
+      log.info('Inbound connection detected, auto-stopping scan to prioritize GATT server');
+      FlutterBluePlus.stopScan();
+      return;
+    }
 
     for (final ScanResult result in results) {
       final advData = result.advertisementData;
@@ -456,14 +464,18 @@ Future<void> _startServiceLogic(
           final id = entry.key;
           final device = entry.value;
 
+          // Prevent collision by adding random jitter (1-3 seconds)
+          final jitter = 1000 + Random().nextInt(2000);
+          log.info('Jitter wait: ${jitter}ms before syncing $id');
+          await Future.delayed(Duration(milliseconds: jitter));
+
           lastSyncAttempt[id] = DateTime.now();
           log.info('Syncing metadata for $id...');
           await _fetchFullMetadata(device, isarService, id, log);
         }
         syncQueue.clear();
         log.info('Sync queue processed.');
-      }
-    } catch (e) {
+      }    } catch (e) {
       log.severe('startSafeScan failed: $e');
       lastScanStartTime = null;
     } finally {
@@ -556,43 +568,51 @@ Future<void> _fetchFullMetadata(
   int stableId,
   Logger log,
 ) async {
+  final remoteId = device.remoteId.toString();
   try {
-    // Explicit disconnect and wait to ensure GATT client is released
-    try {
-      await device.disconnect();
-      await Future.delayed(const Duration(seconds: 2));
-    } catch (_) {}
-
-    int attempts = 0;
-    bool connected = false;
-
-    while (attempts < 3 && !connected) {
-      attempts++;
-      log.info(
-        'Connecting to $stableId to fetch metadata (Attempt $attempts/3)...',
-      );
+    // 1. Check if device is already connected to us (Inbound)
+    if (BLEAdvertiser.isDeviceConnected(remoteId)) {
+      log.info('Device $stableId is already connected (Inbound). Skipping connection phase.');
+    } else {
+      // 2. Not connected, proceed with standard Central connection
       try {
-        await device.connect(
-          autoConnect: false,
-          license: License.free,
-          timeout: const Duration(seconds: 30),
+        await device.disconnect();
+        await Future.delayed(const Duration(seconds: 1));
+      } catch (_) {}
+
+      int attempts = 0;
+      bool connected = false;
+
+      while (attempts < 3 && !connected) {
+        attempts++;
+        log.info(
+          'Connecting to $stableId to fetch metadata (Attempt $attempts/3)...',
         );
-        connected = true;
-        log.info('Connected to $stableId');
-      } catch (e) {
-        final errorStr = e.toString();
-        if (errorStr.contains('already_connected')) {
-          connected = true;
-          log.info('Already connected to $stableId');
-        } else if (errorStr.contains('257') ||
-            errorStr.contains('FAILURE_REGISTERING_CLIENT')) {
-          log.warning(
-            'Received error 257 (Register Client Fail). Cooling down 5s...',
+        try {
+          await device.connect(
+            autoConnect: false,
+            license: License.free,
+            timeout: const Duration(seconds: 30),
           );
-          await Future.delayed(const Duration(seconds: 5));
-          if (attempts >= 3) rethrow;
-        } else {
-          rethrow;
+          connected = true;
+          log.info('Connected to $stableId as Central');
+        } catch (e) {
+          final errorStr = e.toString();
+          if (errorStr.contains('already_connected')) {
+            connected = true;
+            log.info('Already connected to $stableId');
+          } else if (errorStr.contains('257') ||
+              errorStr.contains('FAILURE_REGISTERING_CLIENT')) {
+            log.warning(
+              'Received error 257 (Register Client Fail). Cooling down 5s...',
+            );
+            await Future.delayed(const Duration(seconds: 5));
+            if (attempts >= 3) rethrow;
+          } else {
+            log.warning('Connect attempt $attempts failed for $stableId: $e');
+            await Future.delayed(const Duration(seconds: 2));
+            if (attempts >= 3) rethrow;
+          }
         }
       }
     }

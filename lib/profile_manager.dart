@@ -56,13 +56,13 @@ class ProfileManager {
     final bytes = await croppedFile.readAsBytes();
     _log.info('Original cropped size: ${bytes.length} bytes');
 
-    // Compress and resize to 128x128 WebP using native library
+    // Compress and resize to 256x256 WebP using native library
     try {
-      _log.info('Compressing to 128x128 WebP...');
+      _log.info('Compressing to 256x256 WebP...');
       final webpBytes = await FlutterImageCompress.compressWithList(
         bytes,
-        minWidth: 128,
-        minHeight: 128,
+        minWidth: 256,
+        minHeight: 256,
         quality: 75,
         format: CompressFormat.webp,
       );
