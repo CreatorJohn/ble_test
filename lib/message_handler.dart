@@ -217,15 +217,53 @@ class MessageHandler {
 
     final messageId = relayPayload[9];
 
-    // _pushData handles the "if connected" logic
-    await _pushData(device.remoteId, targetStableId, relayPayload, messageId);
+    try {
+      // _pushData handles the "if connected" logic
+      await _pushData(device.remoteId, targetStableId, relayPayload, messageId);
 
-    await handleOutgoingMessage(
-      receiverStableId: targetStableId,
-      content: content,
-      messageId: messageId,
-      wasSent: true,
-    );
+      await handleOutgoingMessage(
+        receiverStableId: targetStableId,
+        content: content,
+        messageId: messageId,
+        wasSent: true,
+      );
+    } catch (e) {
+      _log.severe('Failed to send message: $e');
+      await handleOutgoingMessage(
+        receiverStableId: targetStableId,
+        content: content,
+        messageId: messageId,
+        wasSent: false,
+        wasFailed: true,
+      );
+    }
+  }
+
+  static Future<void> checkExpiredMessages() async {
+    final isar = IsarService();
+    if (!isar.isOpen) return;
+
+    // TTL 10 * 3 = 30 hops. Let's assume 20s per hop max (conservative)
+    // 30 * 20s = 600s = 10 minutes
+    final threshold = DateTime.now().subtract(const Duration(minutes: 10));
+
+    final expired = await isar.db.messages
+        .filter()
+        .wasSentEqualTo(true)
+        .isDeliveredEqualTo(false)
+        .wasFailedEqualTo(false)
+        .timestampLessThan(threshold)
+        .findAll();
+
+    if (expired.isNotEmpty) {
+      _log.info('Marking ${expired.length} messages as failed (ACK timeout)');
+      await isar.db.writeTxn(() async {
+        for (final msg in expired) {
+          msg.wasFailed = true;
+          await isar.db.messages.put(msg);
+        }
+      });
+    }
   }
 
   static Future<void> _forwardRelayPayload(
@@ -351,6 +389,7 @@ class MessageHandler {
       }
     } catch (e) {
       _log.warning('Failed to push data to $stableId: $e');
+      rethrow;
     } finally {
       if (!alreadyConnected) {
         try {
@@ -377,6 +416,7 @@ class MessageHandler {
     Uint8List? imageData,
     int? messageId,
     bool wasSent = false,
+    bool wasFailed = false,
   }) async {
     try {
       final isar = IsarService();
@@ -391,7 +431,8 @@ class MessageHandler {
         ..isImage = isImage
         ..data = imageData
         ..messageId = messageId
-        ..wasSent = wasSent;
+        ..wasSent = wasSent
+        ..wasFailed = wasFailed;
 
       await isar.putMessage(message);
       _log.info('Saved outgoing message to $receiverStableId');

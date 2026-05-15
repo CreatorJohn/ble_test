@@ -247,8 +247,9 @@ Future<void> _startServiceLogic(
       dev.remoteId = r.device.remoteId.toString();
       dev.rssi = r.rssi;
       dev.lastSeen = DateTime.now();
-      if (r.advertisementData.advName.isNotEmpty)
+      if (r.advertisementData.advName.isNotEmpty) {
         dev.name = r.advertisementData.advName;
+      }
       if (versionTag != null) dev.versionTag = versionTag;
       if (profileHash != null) dev.profileHash = profileHash;
       if (lat != null) dev.latitude = lat;
@@ -263,8 +264,9 @@ Future<void> _startServiceLogic(
       await isar.putFoundDevice(dev);
       if (needsUpdate) {
         final last = lastSyncAttempt[stableId];
-        if (last == null || DateTime.now().difference(last).inMinutes >= 5)
+        if (last == null || DateTime.now().difference(last).inMinutes >= 5) {
           syncQueue[stableId] = r.device;
+        }
       }
     }
   });
@@ -292,8 +294,9 @@ Future<void> _startServiceLogic(
           .nameEqualTo("Connecting Device...")
           .findAll();
       for (final dev in needsSync) {
-        if (!syncQueue.containsKey(dev.stableId))
+        if (!syncQueue.containsKey(dev.stableId)) {
           syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
+        }
       }
 
       if (await FlutterBluePlus.adapterState.first !=
@@ -357,6 +360,10 @@ Future<void> _startServiceLogic(
   });
 
   Timer.periodic(waitDuration + scanDuration, (_) => startSafeScan());
+  
+  // Periodically check for ACK timeouts (every 2 minutes)
+  Timer.periodic(const Duration(minutes: 2), (_) => MessageHandler.checkExpiredMessages());
+  
   await startSafeScan();
 
   service.on('stopService').listen((_) async {
@@ -479,11 +486,12 @@ Future<void> _fetchFullMetadata(
       try {
         await messageChar.setNotifyValue(true);
         messageChar.onValueReceived.listen((v) {
-          if (v.isNotEmpty)
+          if (v.isNotEmpty) {
             MessageHandler.handleIncomingMessage(
               senderStableId: stableId,
               data: v,
             );
+          }
         });
       } catch (_) {}
     }
@@ -531,10 +539,11 @@ Future<void> _fetchFullMetadata(
               });
               try {
                 await comp.future.timeout(const Duration(seconds: 30));
-                if (buffer.length >= expected)
+                if (buffer.length >= expected) {
                   dev.profilePicture = Uint8List.fromList(
                     buffer.sublist(0, expected),
                   );
+                }
               } finally {
                 await sub.cancel();
                 await picChar.setNotifyValue(false).catchError((_) => false);

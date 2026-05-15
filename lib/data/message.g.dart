@@ -50,7 +50,12 @@ const MessageSchema = CollectionSchema(
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
-    r'wasSent': PropertySchema(id: 9, name: r'wasSent', type: IsarType.bool),
+    r'wasFailed': PropertySchema(
+      id: 9,
+      name: r'wasFailed',
+      type: IsarType.bool,
+    ),
+    r'wasSent': PropertySchema(id: 10, name: r'wasSent', type: IsarType.bool),
   },
 
   estimateSize: _messageEstimateSize,
@@ -139,7 +144,8 @@ void _messageSerialize(
   writer.writeLong(offsets[6], object.receiverStableId);
   writer.writeLong(offsets[7], object.senderStableId);
   writer.writeDateTime(offsets[8], object.timestamp);
-  writer.writeBool(offsets[9], object.wasSent);
+  writer.writeBool(offsets[9], object.wasFailed);
+  writer.writeBool(offsets[10], object.wasSent);
 }
 
 Message _messageDeserialize(
@@ -159,7 +165,8 @@ Message _messageDeserialize(
   object.receiverStableId = reader.readLong(offsets[6]);
   object.senderStableId = reader.readLong(offsets[7]);
   object.timestamp = reader.readDateTime(offsets[8]);
-  object.wasSent = reader.readBool(offsets[9]);
+  object.wasFailed = reader.readBool(offsets[9]);
+  object.wasSent = reader.readBool(offsets[10]);
   return object;
 }
 
@@ -189,6 +196,8 @@ P _messageDeserializeProp<P>(
     case 8:
       return (reader.readDateTime(offset)) as P;
     case 9:
+      return (reader.readBool(offset)) as P;
+    case 10:
       return (reader.readBool(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1262,6 +1271,16 @@ extension MessageQueryFilter
     });
   }
 
+  QueryBuilder<Message, Message, QAfterFilterCondition> wasFailedEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'wasFailed', value: value),
+      );
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterFilterCondition> wasSentEqualTo(
     bool value,
   ) {
@@ -1373,6 +1392,18 @@ extension MessageQuerySortBy on QueryBuilder<Message, Message, QSortBy> {
   QueryBuilder<Message, Message, QAfterSortBy> sortByTimestampDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByWasFailed() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasFailed', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> sortByWasFailedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasFailed', Sort.desc);
     });
   }
 
@@ -1499,6 +1530,18 @@ extension MessageQuerySortThenBy
     });
   }
 
+  QueryBuilder<Message, Message, QAfterSortBy> thenByWasFailed() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasFailed', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Message, Message, QAfterSortBy> thenByWasFailedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'wasFailed', Sort.desc);
+    });
+  }
+
   QueryBuilder<Message, Message, QAfterSortBy> thenByWasSent() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'wasSent', Sort.asc);
@@ -1570,6 +1613,12 @@ extension MessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Message, Message, QDistinct> distinctByWasFailed() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'wasFailed');
+    });
+  }
+
   QueryBuilder<Message, Message, QDistinct> distinctByWasSent() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'wasSent');
@@ -1636,6 +1685,12 @@ extension MessageQueryProperty
   QueryBuilder<Message, DateTime, QQueryOperations> timestampProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'timestamp');
+    });
+  }
+
+  QueryBuilder<Message, bool, QQueryOperations> wasFailedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'wasFailed');
     });
   }
 

@@ -19,6 +19,7 @@ class Message {
 
   bool isDelivered = false;
   bool wasSent = false;
+  bool wasFailed = false;
   @Index()
   int? messageId;
 }

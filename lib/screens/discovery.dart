@@ -233,9 +233,16 @@ class DiscoveryScreen extends ConsumerWidget {
                               ),
                               IconButton(
                                 icon: const Icon(Icons.message_outlined),
-                                tooltip: "Messages",
-                                onPressed: () =>
-                                    _showMessageHistoryDialog(context, ref, item),
+                                tooltip: item.publicKey == null
+                                    ? "Handshake pending..."
+                                    : "Messages",
+                                onPressed: item.publicKey == null
+                                    ? null
+                                    : () => _showMessageHistoryDialog(
+                                          context,
+                                          ref,
+                                          item,
+                                        ),
                               ),
                             ],
                           ),
@@ -306,6 +313,8 @@ class DiscoveryScreen extends ConsumerWidget {
     FoundDevice device,
   ) {
     final controller = TextEditingController();
+    final scrollController = ScrollController();
+
     showDialog(
       context: context,
       builder: (context) => Dialog.fullscreen(
@@ -326,7 +335,16 @@ class DiscoveryScreen extends ConsumerWidget {
                       if (messages.isEmpty) {
                         return const Center(child: Text("No messages yet."));
                       }
+                      // Auto-scroll to bottom
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (scrollController.hasClients) {
+                          scrollController.jumpTo(
+                            scrollController.position.maxScrollExtent,
+                          );
+                        }
+                      });
                       return ListView.builder(
+                        controller: scrollController,
                         padding: const EdgeInsets.all(8),
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
@@ -371,15 +389,19 @@ class DiscoveryScreen extends ConsumerWidget {
                             ),
                             trailing: !isReceived
                                 ? Icon(
-                                    !msg.wasSent
-                                        ? Icons.schedule
-                                        : (msg.isDelivered
-                                            ? Icons.done_all
-                                            : Icons.check),
+                                    msg.wasFailed
+                                        ? Icons.error_outline
+                                        : (!msg.wasSent
+                                            ? Icons.schedule
+                                            : (msg.isDelivered
+                                                ? Icons.done_all
+                                                : Icons.check)),
                                     size: 16,
-                                    color: msg.isDelivered
-                                        ? Colors.blue
-                                        : Colors.grey,
+                                    color: msg.wasFailed
+                                        ? Colors.red
+                                        : (msg.isDelivered
+                                            ? Colors.blue
+                                            : Colors.grey),
                                   )
                                 : null,
                           );
