@@ -35,6 +35,10 @@ class MessageHandler {
   static const int typeSyncDone = 0x07;
   static const int typeRequestProfilePic = 0x08;
 
+  static const int maxTTL = 10;
+  static const int scanDurationSeconds = 10;
+  static const int waitDurationSeconds = 50;
+
   static final Map<int, DateTime> _seenRelayMessageIds = {};
   static final Map<int, PendingAck> _pendingAcks = {};
   static final Map<int, Completer<void>> _syncDoneCompleters = {};
@@ -45,16 +49,21 @@ class MessageHandler {
     _cacheCleanupTimer?.cancel();
     _cacheCleanupTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       final now = DateTime.now();
-      // Cache Lifetime = (TTL 10 * 100s) + 20s = 1020s
+
+      // Formula: maxTTL * (scanDuration + waitDuration) + 20
+      const cacheLifetimeSeconds =
+          maxTTL * (scanDurationSeconds + waitDurationSeconds) + 20;
+
       _seenRelayMessageIds.removeWhere(
         (id, timestamp) =>
-            now.difference(timestamp) > const Duration(seconds: 1020),
+            now.difference(timestamp).inSeconds > cacheLifetimeSeconds,
       );
 
-      // Cleanup breadcrumbs (50 minutes)
+      // Cleanup breadcrumbs (2x cache lifetime)
       _pendingAcks.removeWhere(
         (key, pendingAck) =>
-            now.difference(pendingAck.timestamp) > const Duration(minutes: 50),
+            now.difference(pendingAck.timestamp).inSeconds >
+            (cacheLifetimeSeconds * 2),
       );
     });
   }
