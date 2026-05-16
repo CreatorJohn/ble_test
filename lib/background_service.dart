@@ -346,27 +346,45 @@ Future<void> _startServiceLogic(
     }
   }
 
+  Timer? discoveryTimer;
+  DateTime? lastCycleFinishedTime;
+  void runDiscoveryCycle() async {
+    lastCycleFinishedTime = null;
+    await startSafeScan();
+    lastCycleFinishedTime = DateTime.now();
+    discoveryTimer = Timer(waitDuration, runDiscoveryCycle);
+  }
+
   Timer.periodic(const Duration(milliseconds: 500), (t) {
-    if (lastScanStartTime == null) return;
-    final now = DateTime.now(), total = scanDuration + waitDuration;
-    final elapsed = now.difference(lastScanStartTime!);
+    final now = DateTime.now();
+
     if (FlutterBluePlus.isScanningNow) {
+      if (lastScanStartTime == null) return;
+      final elapsed = now.difference(lastScanStartTime!);
+      // Phase 1: Scanning (10s)
       service.invoke('updateProgress', {
         'value': (elapsed.inMilliseconds / scanDuration.inMilliseconds).clamp(
           0.0,
           1.0,
         ),
       });
+    } else if (isScanOperationInProgress) {
+      // Phase 2: Metadata Fetching (Variable time)
+      service.invoke('updateProgress', {
+        'value': 1.0,
+        'status': 'Fetching Metadata...',
+      });
     } else {
-      final rem = total.inMilliseconds - elapsed.inMilliseconds;
+      // Phase 3: Waiting (50s)
+      if (lastCycleFinishedTime == null) return;
+      final waitElapsed = now.difference(lastCycleFinishedTime!);
+      final rem = waitDuration.inMilliseconds - waitElapsed.inMilliseconds;
       service.invoke('updateProgress', {
         'value': (rem / waitDuration.inMilliseconds).clamp(0.0, 1.0),
-        'remainingSeconds': (rem / 1000).ceil().clamp(0, 60),
+        'remainingSeconds': (rem / 1000).ceil().clamp(0, 50),
       });
     }
   });
-
-  Timer.periodic(waitDuration + scanDuration, (_) => startSafeScan());
 
   // Periodically check for ACK timeouts (every 2 minutes)
   Timer.periodic(
@@ -374,9 +392,10 @@ Future<void> _startServiceLogic(
     (_) => MessageHandler.checkExpiredMessages(),
   );
 
-  await startSafeScan();
+  runDiscoveryCycle();
 
   service.on('stopService').listen((_) async {
+    discoveryTimer?.cancel();
     await advertiser.stopAdvertising();
     service.stopSelf();
   });
