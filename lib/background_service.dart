@@ -287,12 +287,12 @@ Future<void> _startServiceLogic(
 
   Future<void> startSafeScan() async {
     if (isScanOperationInProgress) return;
-    int defer = 0;
-    while (BLEAdvertiser.hasInboundConnections && defer < 6) {
-      await Future.delayed(const Duration(seconds: 5));
-      defer++;
+
+    // Allow scanning even if we have inbound connections, 
+    // but log it for debugging. Mesh nodes should be able to do both.
+    if (BLEAdvertiser.hasInboundConnections) {
+      log.info('Scanning with active inbound connections...');
     }
-    if (BLEAdvertiser.hasInboundConnections) return;
 
     isScanOperationInProgress = true;
     try {
@@ -440,6 +440,9 @@ Future<void> _fetchFullMetadata(
 ) async {
   final remoteId = device.remoteId.toString();
   bool establishedByUs = false;
+  BluetoothCharacteristic? picChar, messageChar;
+  StreamSubscription? messageSub;
+
   try {
     if (BLEAdvertiser.isDeviceConnected(remoteId)) {
       log.info('Using existing connection for $stableId');
@@ -482,15 +485,11 @@ Future<void> _fetchFullMetadata(
         );
       } catch (_) {}
     }
-    final services = await device.discoverServices();
+    final services =
+        await device.discoverServices().timeout(const Duration(seconds: 20));
     await Future.delayed(const Duration(milliseconds: 500));
 
-    BluetoothCharacteristic? picChar,
-        hashChar,
-        locChar,
-        keyChar,
-        nameChar,
-        messageChar;
+    BluetoothCharacteristic? hashChar, locChar, keyChar, nameChar;
     for (final s in services) {
       if (s.uuid.toString().toLowerCase() ==
           BLEAdvertiser.serviceUuid.toLowerCase()) {
@@ -515,8 +514,10 @@ Future<void> _fetchFullMetadata(
 
     if (messageChar != null) {
       try {
-        await messageChar.setNotifyValue(true);
-        messageChar.onValueReceived.listen((v) {
+        await messageChar
+            .setNotifyValue(true)
+            .timeout(const Duration(seconds: 5));
+        messageSub = messageChar.onValueReceived.listen((v) {
           if (v.isNotEmpty) {
             MessageHandler.handleIncomingMessage(
               senderStableId: stableId,
@@ -554,7 +555,9 @@ Future<void> _fetchFullMetadata(
 
         if (picChar != null && (missing || mismatched)) {
           try {
-            await picChar.setNotifyValue(true);
+            await picChar
+                .setNotifyValue(true)
+                .timeout(const Duration(seconds: 5));
             final h = await picChar.read().timeout(const Duration(seconds: 10));
             if (h.length >= 5 && h[0] == 0xAA) {
               final bd = ByteData.view(Uint8List.fromList(h).buffer);
@@ -576,7 +579,10 @@ Future<void> _fetchFullMetadata(
                 }
               } finally {
                 await sub.cancel();
-                await picChar.setNotifyValue(false).catchError((_) => false);
+                await picChar
+                    .setNotifyValue(false)
+                    .timeout(const Duration(seconds: 5))
+                    .catchError((_) => false);
               }
             }
           } catch (_) {}
@@ -619,10 +625,23 @@ Future<void> _fetchFullMetadata(
   } catch (e) {
     log.warning('Sync fail for $stableId: $e');
   } finally {
+    if (messageSub != null) {
+      await messageSub.cancel();
+    }
+    if (messageChar != null) {
+      await messageChar
+          .setNotifyValue(false)
+          .timeout(const Duration(seconds: 5))
+          .catchError((_) => false);
+    }
     if (establishedByUs) {
       try {
-        await device.disconnect();
-      } catch (_) {}
+        log.info('Disconnecting from $stableId...');
+        await device.disconnect().timeout(const Duration(seconds: 10));
+        log.info('Disconnected from $stableId.');
+      } catch (e) {
+        log.warning('Disconnect failed/timed out for $stableId: $e');
+      }
     }
   }
 }
