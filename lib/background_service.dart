@@ -124,6 +124,7 @@ Future<void> _startServiceLogic(
         longitude: currentLon,
         isOnline: isOnline,
       );
+      await prefs.setBool('advertising_on', true);
       service.invoke("advertisingChange", {"active": true});
     } catch (e) {
       log.severe('Ad update fail: $e');
@@ -361,21 +362,24 @@ Future<void> _startServiceLogic(
   });
 
   Timer.periodic(waitDuration + scanDuration, (_) => startSafeScan());
-  
+
   // Periodically check for ACK timeouts (every 2 minutes)
-  Timer.periodic(const Duration(minutes: 2), (_) => MessageHandler.checkExpiredMessages());
-  
+  Timer.periodic(
+    const Duration(minutes: 2),
+    (_) => MessageHandler.checkExpiredMessages(),
+  );
+
   await startSafeScan();
 
   service.on('stopService').listen((_) async {
     await advertiser.stopAdvertising();
     service.stopSelf();
   });
-  service.on('startAdvertising').listen((e) {
-    final name = e?['name'];
+  service.on('startAdvertising').listen((e) async {
+    final String? name = e?['name'];
     advertisingOn = true;
-    prefs.setBool('advertising_on', true);
-    if (name is String) {
+    await prefs.setBool('advertising_on', true);
+    if (name != null) {
       currentName = name;
       updateAd();
     }
@@ -389,7 +393,7 @@ Future<void> _startServiceLogic(
   });
   service.on("stopAdvertising").listen((_) async {
     advertisingOn = false;
-    prefs.setBool('advertising_on', false);
+    await prefs.setBool('advertising_on', false);
     await advertiser.stopAdvertising();
     service.invoke("advertisingChange", {"active": false});
   });
