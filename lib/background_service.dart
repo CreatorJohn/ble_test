@@ -307,8 +307,6 @@ Future<void> _startServiceLogic(
       final needsSync = await isar.db.foundDevices
           .filter()
           .publicKeyIsNull()
-          .or()
-          .nameEqualTo("Connecting Device...")
           .findAll();
       for (final dev in needsSync) {
         if (!syncQueue.containsKey(dev.stableId)) {
@@ -526,8 +524,7 @@ Future<void> _fetchFullMetadata(
             missing = dev.profilePicture == null;
         dev.profileHash = hashHex;
 
-        if (nameChar != null &&
-            (dev.name == null || dev.name == "Connecting Device...")) {
+        if (nameChar != null && dev.name == null) {
           final nb = await robustRead(nameChar);
           if (nb.isNotEmpty) dev.name = utf8.decode(nb, allowMalformed: true);
         }

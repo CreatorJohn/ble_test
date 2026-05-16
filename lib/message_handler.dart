@@ -76,17 +76,6 @@ class MessageHandler {
           final msgId = fullData[9];
           int ttl = fullData[10];
 
-          // Identity Linking: If this message came directly from the origin,
-          // ensure we have their remoteId (MAC) mapped to their stableId.
-          // This is critical for non-advertising devices like Chromebooks.
-          if (ttl == 10 || ttl == 5) {
-            // Common starting TTLs
-            _log.info(
-              'Possible direct connection from $originSenderId. Linking identity...',
-            );
-            _linkIdentity(directSenderId, originSenderId);
-          }
-
           // Cache key: OriginSenderId (32-bit) + MsgId (8-bit)
           final cacheKey = (originSenderId << 8) | msgId;
 
@@ -129,8 +118,6 @@ class MessageHandler {
             return;
           }
         } else {
-          _log.info('Direct message from $originSenderId. Linking identity...');
-          _linkIdentity(directSenderId, originSenderId);
           decryptedData = await _decryptMessage(originSenderId, fullData);
           if (decryptedData == null || decryptedData.isEmpty) return;
           payloadToProcess = decryptedData;
@@ -626,52 +613,5 @@ class MessageHandler {
     ackPayload[9] = msgId;
 
     await _pushData(neighbor.remoteId, targetNodeId, ackPayload, msgId);
-  }
-
-  static Future<void> _linkIdentity(int directId, int originId) async {
-    if (directId == originId) return; // Already same or known
-
-    final isar = IsarService();
-    // 1. Find the person who connected (placeholder)
-    final placeholder = await isar.db.foundDevices
-        .where()
-        .stableIdEqualTo(directId)
-        .findFirst();
-    if (placeholder == null) return;
-
-    // 2. Find the person they claim to be (permanent record)
-    final permanent = await isar.db.foundDevices
-        .where()
-        .stableIdEqualTo(originId)
-        .findFirst();
-
-    if (permanent != null) {
-      // Merge! Update permanent record with current MAC
-      _log.info('Linking MAC ${placeholder.remoteId} to ID $originId');
-      permanent.remoteId = placeholder.remoteId;
-      permanent.lastSeen = DateTime.now();
-      await isar.putFoundDevice(permanent);
-
-      // Clean up placeholder
-      await isar.db.writeTxn(() async {
-        await isar.db.foundDevices.delete(placeholder.id);
-      });
-    } else {
-      // Create new permanent record with this MAC
-      _log.info(
-        'Creating new ID record for $originId with MAC ${placeholder.remoteId}',
-      );
-      final newRecord = FoundDevice()
-        ..stableId = originId
-        ..remoteId = placeholder.remoteId
-        ..name = placeholder.name
-        ..lastSeen = DateTime.now();
-      await isar.putFoundDevice(newRecord);
-
-      // Clean up placeholder
-      await isar.db.writeTxn(() async {
-        await isar.db.foundDevices.delete(placeholder.id);
-      });
-    }
   }
 }
