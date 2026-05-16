@@ -112,9 +112,7 @@ class MessageHandler {
 
           if (_seenRelayMessageIds.containsKey(cacheKey)) {
             if (targetId == myId) {
-              _pushAck(directSenderId, originSenderId, msgId).catchError((e) {
-                _log.warning('Failed to re-send inbound ACK for $msgId: $e');
-              });
+              _enqueueTerminalAck(directSenderId, originSenderId, msgId);
             } else {
               _pendingAcks[cacheKey]?.upstreamNodeIds.add(directSenderId);
             }
@@ -123,9 +121,7 @@ class MessageHandler {
           _seenRelayMessageIds[cacheKey] = DateTime.now();
 
           if (targetId == myId) {
-            _pushAck(directSenderId, originSenderId, msgId).catchError((e) {
-              _log.warning('Failed to send inbound ACK for $msgId: $e');
-            });
+            _enqueueTerminalAck(directSenderId, originSenderId, msgId);
 
             final innerPayload = fullData.sublist(11);
             decryptedData = await _decryptMessage(originSenderId, innerPayload);
@@ -171,6 +167,13 @@ class MessageHandler {
             device.profilePicture = payload;
             device.lastPictureSync = DateTime.now();
             await isar.putFoundDevice(device);
+            _log.info('Saved profile picture for $originSenderId');
+          }
+
+          // Trigger queue push if we were waiting for this image (Step 6)
+          if (_waitingForImageFrom == originSenderId) {
+            _waitingForImageFrom = null;
+            await pushQueuedDataToPeer(originSenderId, useNotifications: true);
           }
           return;
         }
@@ -464,29 +467,31 @@ class MessageHandler {
     }
   }
 
-  static Future<void> _pushAck(
-    int targetNodeId,
-    int originId,
-    int msgId,
-  ) async {
+  static void _enqueueTerminalAck(int neighborId, int originId, int msgId) async {
+    final myId = await ProfileManager.getStableDeviceId();
     final ackPayload = Uint8List(10);
     final buffer = ByteData.view(ackPayload.buffer);
     ackPayload[0] = typeAck;
-    buffer.setUint32(1, targetNodeId, Endian.big);
-    buffer.setUint32(5, originId, Endian.big);
+    buffer.setUint32(1, originId, Endian.big);
+    buffer.setUint32(5, myId, Endian.big);
     ackPayload[9] = msgId;
 
     final isar = IsarService();
-    final neighbor = await isar.db.foundDevices
-        .where()
-        .stableIdEqualTo(targetNodeId)
-        .findFirst();
+    if (isar.isOpen) {
+      final task = RelayTask()
+        ..messageId = msgId
+        ..originId = myId
+        ..targetId = originId
+        ..type = typeAck
+        ..data = ackPayload
+        ..pendingNeighborIds = [neighborId]
+        ..createdAt = DateTime.now();
 
-    if (neighbor != null) {
-      final mtu = BLEAdvertiser.getMtuForDevice(neighbor.remoteId);
-      final maxChunkSize = (mtu - 10).clamp(20, 500);
-      await _notifyData(neighbor.remoteId, ackPayload, msgId,
-          maxChunkSize: maxChunkSize);
+      try {
+        await isar.db.writeTxn(() async => await isar.db.relayTasks.put(task));
+      } catch (e) {
+        _log.warning('Failed to enqueue terminal ACK: $e');
+      }
     }
   }
 
