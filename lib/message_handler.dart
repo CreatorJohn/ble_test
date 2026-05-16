@@ -65,6 +65,28 @@ class MessageHandler {
             now.difference(pendingAck.timestamp).inSeconds >
             (cacheLifetimeSeconds * 2),
       );
+
+      // Cleanup persistent RelayTasks (30 minutes TTL)
+      final isar = IsarService();
+      if (isar.isOpen) {
+        () async {
+          try {
+            await isar.db.writeTxn(() async {
+              final relayThreshold = now.subtract(const Duration(minutes: 30));
+              final expiredTasks = await isar.db.relayTasks
+                  .filter()
+                  .createdAtLessThan(relayThreshold)
+                  .findAll();
+              if (expiredTasks.isNotEmpty) {
+                await isar.db.relayTasks
+                    .deleteAll(expiredTasks.map((t) => t.id).toList());
+              }
+            });
+          } catch (e) {
+            _log.warning('RelayTask cleanup fail: $e');
+          }
+        }();
+      }
     });
   }
 
