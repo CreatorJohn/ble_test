@@ -8,16 +8,22 @@ part 'advertising_name.g.dart';
 @riverpod
 class IsAdvertising extends _$IsAdvertising {
   final FlutterBackgroundService _service = FlutterBackgroundService();
+  static const String _adKey = 'advertising_on';
 
   @override
   bool build() {
     _service.on("advertisingChange").listen((event) {
       final bool? active = event?["active"];
-
-      state = active ?? false;
+      if (active != null) state = active;
     });
 
+    _loadInitial();
     return false;
+  }
+
+  Future<void> _loadInitial() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_adKey) ?? false;
   }
 }
 

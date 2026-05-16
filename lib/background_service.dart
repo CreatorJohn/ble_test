@@ -124,6 +124,7 @@ Future<void> _startServiceLogic(
         longitude: currentLon,
         isOnline: isOnline,
       );
+      service.invoke("advertisingChange", {"active": true});
     } catch (e) {
       log.severe('Ad update fail: $e');
     }
@@ -373,6 +374,7 @@ Future<void> _startServiceLogic(
   service.on('startAdvertising').listen((e) {
     final name = e?['name'];
     advertisingOn = true;
+    prefs.setBool('advertising_on', true);
     if (name is String) {
       currentName = name;
       updateAd();
@@ -387,6 +389,7 @@ Future<void> _startServiceLogic(
   });
   service.on("stopAdvertising").listen((_) async {
     advertisingOn = false;
+    prefs.setBool('advertising_on', false);
     await advertiser.stopAdvertising();
     service.invoke("advertisingChange", {"active": false});
   });
