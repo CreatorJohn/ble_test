@@ -1,5 +1,6 @@
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/message.dart';
+import 'package:ble_test/data/relay_task.dart';
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -27,6 +28,7 @@ class IsarService {
     _isar = await Isar.open([
       FoundDeviceSchema,
       MessageSchema,
+      RelayTaskSchema,
     ], directory: dir.path);
   }
 

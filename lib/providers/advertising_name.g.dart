@@ -41,7 +41,7 @@ final class CanAdvertiseProvider
   }
 }
 
-String _$canAdvertiseHash() => r'8fc7f15b449c12f872b1461de6bcfedaa65c0d79';
+String _$canAdvertiseHash() => r'd40a1f1c6d58831285089bb3eb74054dd66d93a9';
 
 abstract class _$CanAdvertise extends $Notifier<bool?> {
   bool? build();
