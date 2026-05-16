@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/data/message.dart';
 import 'package:ble_test/data/relay_task.dart';
+import 'package:ble_test/data/mesh_packet.dart';
 import 'package:ble_test/profile_manager.dart';
 import 'package:ble_test/utils/geo_utils.dart';
 import 'dart:typed_data';
@@ -25,15 +25,6 @@ class MessageHandler {
   static final Logger _log = Logger('MessageHandler');
   static final _cipher = Chacha20.poly1305Aead();
   static final _exchangeAlgorithm = X25519();
-
-  static const int typeText = 0x01;
-  static const int typeImage = 0x02;
-  static const int typeProfilePic = 0x03;
-  static const int typeRelay = 0x04;
-  static const int typeAck = 0x05;
-  static const int typeIdentity = 0x06;
-  static const int typeSyncDone = 0x07;
-  static const int typeRequestProfilePic = 0x08;
 
   static const int maxTTL = 10;
   static const int scanDurationSeconds = 10;
@@ -94,25 +85,19 @@ class MessageHandler {
       final fullData = event['payload'] as Uint8List;
 
       try {
-        final int type = fullData[0];
+        final packet = MeshPacket.parse(fullData);
         Uint8List? decryptedData;
         Uint8List payloadToProcess;
         int originSenderId = directSenderId;
 
-        if (type == typeRelay) {
-          if (fullData.length < 11) return;
-          final buffer = ByteData.view(fullData.buffer);
-          final targetId = buffer.getUint32(1, Endian.big);
-          originSenderId = buffer.getUint32(5, Endian.big);
-          final msgId = fullData[9];
-          int ttl = fullData[10];
-
-          final cacheKey = (originSenderId << 8) | msgId;
+        if (packet is RelayPacket) {
+          originSenderId = packet.originId;
+          final cacheKey = (originSenderId << 8) | packet.messageId;
           final myId = await ProfileManager.getStableDeviceId();
 
           if (_seenRelayMessageIds.containsKey(cacheKey)) {
-            if (targetId == myId) {
-              _enqueueTerminalAck(directSenderId, originSenderId, msgId);
+            if (packet.targetId == myId) {
+              _enqueueTerminalAck(directSenderId, originSenderId, packet.messageId);
             } else {
               _pendingAcks[cacheKey]?.upstreamNodeIds.add(directSenderId);
             }
@@ -120,33 +105,43 @@ class MessageHandler {
           }
           _seenRelayMessageIds[cacheKey] = DateTime.now();
 
-          if (targetId == myId) {
-            _enqueueTerminalAck(directSenderId, originSenderId, msgId);
+          if (packet.targetId == myId) {
+            _log.info('We are the target for relay message ${packet.messageId}');
+            _enqueueTerminalAck(directSenderId, originSenderId, packet.messageId);
 
-            final innerPayload = fullData.sublist(11);
-            decryptedData = await _decryptMessage(originSenderId, innerPayload);
+            decryptedData = await _decryptMessage(originSenderId, packet.encryptedPayload);
             if (decryptedData == null || decryptedData.isEmpty) return;
             payloadToProcess = decryptedData;
-          } else if (ttl > 1) {
-            _pendingAcks[cacheKey] =
-                PendingAck({directSenderId}, DateTime.now());
-            fullData[10] = ttl - 1;
-            _forwardRelayPayload(fullData, targetId, originSenderId, msgId);
+          } else if (packet.ttl > 1) {
+            _log.info('Enqueuing relay message ${packet.messageId} for forwarding');
+            _pendingAcks[cacheKey] = PendingAck({directSenderId}, DateTime.now());
+            
+            final nextPacket = RelayPacket(
+              targetId: packet.targetId,
+              originId: packet.originId,
+              messageId: packet.messageId,
+              ttl: packet.ttl - 1,
+              encryptedPayload: packet.encryptedPayload,
+            );
+            _forwardRelayPayload(nextPacket.toBytes(), packet.targetId, originSenderId, packet.messageId);
             return;
           } else {
             return;
           }
-        } else if (type == typeIdentity) {
-          await handlePeerIdentity(directSenderId, fullData);
+        } else if (packet is IdentityPacket) {
+          _log.info('Received Identity Message from $directSenderId');
+          await handlePeerIdentity(directSenderId, packet);
           return;
-        } else if (type == typeSyncDone) {
+        } else if (packet is SyncDonePacket) {
+          _log.info('Received SyncDone from $directSenderId');
           _syncDoneCompleters[directSenderId]?.complete();
           return;
-        } else if (type == typeRequestProfilePic) {
+        } else if (packet is RequestProfilePicPacket) {
+          _log.info('Peer $directSenderId requested our profile picture');
           _syncDoneCompleters[directSenderId]?.completeError('request_pic');
           return;
-        } else if (type == typeAck) {
-          await handleIncomingAck(fullData);
+        } else if (packet is AckPacket) {
+          await handleIncomingAck(packet);
           return;
         } else {
           decryptedData = await _decryptMessage(originSenderId, fullData);
@@ -154,23 +149,21 @@ class MessageHandler {
           payloadToProcess = decryptedData;
         }
 
-        final innerType = payloadToProcess[0];
-        final payload = payloadToProcess.sublist(1);
+        final innerPacket = MeshPacket.parse(payloadToProcess);
 
-        if (innerType == typeProfilePic) {
+        if (innerPacket is ProfilePicPacket) {
           final isar = IsarService();
           final device = await isar.db.foundDevices
               .where()
               .stableIdEqualTo(originSenderId)
               .findFirst();
           if (device != null) {
-            device.profilePicture = payload;
+            device.profilePicture = innerPacket.imageData;
             device.lastPictureSync = DateTime.now();
             await isar.putFoundDevice(device);
             _log.info('Saved profile picture for $originSenderId');
           }
 
-          // Trigger queue push if we were waiting for this image (Step 6)
           if (_waitingForImageFrom == originSenderId) {
             _waitingForImageFrom = null;
             await pushQueuedDataToPeer(originSenderId, useNotifications: true);
@@ -185,13 +178,13 @@ class MessageHandler {
           ..timestamp = DateTime.now()
           ..isReceived = true;
 
-        if (innerType == typeText) {
-          message.content = utf8.decode(payload);
+        if (innerPacket is TextPacket) {
+          message.content = innerPacket.text;
           message.isImage = false;
-        } else if (innerType == typeImage) {
+        } else if (innerPacket is ImagePacket) {
           message.content = "[Image]";
           message.isImage = true;
-          message.data = payload;
+          message.data = innerPacket.imageData;
         } else {
           return;
         }
@@ -214,29 +207,26 @@ class MessageHandler {
 
     if (relayPayload == null) throw Exception("Encryption handshake required");
 
+    final packet = RelayPacket.fromBytes(relayPayload);
+
     await handleOutgoingMessage(
       receiverStableId: targetStableId,
       content: content,
-      messageId: relayPayload[9],
+      messageId: packet.messageId,
       wasSent: false,
     );
   }
 
-  static Future<void> handleIncomingAck(Uint8List ackPayload) async {
-    final buffer = ByteData.view(ackPayload.buffer);
-    final targetId = buffer.getUint32(1, Endian.big);
-    final originId = buffer.getUint32(5, Endian.big);
-    final msgId = ackPayload[9];
-
+  static Future<void> handleIncomingAck(AckPacket packet) async {
     final myId = await ProfileManager.getStableDeviceId();
-    if (targetId != myId) return;
+    if (packet.targetId != myId) return;
 
-    if (originId == myId) {
-      _log.info('Message $msgId delivered!');
+    if (packet.originId == myId) {
+      _log.info('Message ${packet.messageId} delivered!');
       final isar = IsarService();
       final msg = await isar.db.messages
           .filter()
-          .messageIdEqualTo(msgId)
+          .messageIdEqualTo(packet.messageId)
           .findFirst();
       if (msg != null && !msg.isDelivered) {
         msg.isDelivered = true;
@@ -245,17 +235,18 @@ class MessageHandler {
       return;
     }
 
-    final cacheKey = (originId << 8) | msgId;
+    final cacheKey = (packet.originId << 8) | packet.messageId;
     final pendingAck = _pendingAcks[cacheKey];
 
     if (pendingAck != null) {
+      _log.info('Enqueuing ACK fan-back for ${packet.messageId}');
       final isar = IsarService();
       final task = RelayTask()
-        ..messageId = msgId
-        ..originId = originId
+        ..messageId = packet.messageId
+        ..originId = packet.originId
         ..targetId = 0
-        ..type = typeAck
-        ..data = ackPayload
+        ..type = MeshPacket.typeAck
+        ..data = packet.toBytes()
         ..pendingNeighborIds = pendingAck.upstreamNodeIds.toList()
         ..createdAt = DateTime.now();
 
@@ -276,7 +267,7 @@ class MessageHandler {
       ..messageId = msgId
       ..originId = originId
       ..targetId = targetId
-      ..type = typeRelay
+      ..type = MeshPacket.typeRelay
       ..data = payload
       ..pendingNeighborIds = []
       ..createdAt = DateTime.now();
@@ -307,10 +298,11 @@ class MessageHandler {
       );
 
       if (payload != null) {
+        final relayPacket = RelayPacket.fromBytes(payload);
         await _pushOrNotify(
           peerStableId,
           payload,
-          payload[9],
+          relayPacket.messageId,
           useNotifications,
           centralWriteChar,
         );
@@ -326,9 +318,9 @@ class MessageHandler {
     for (final task in tasks) {
       bool shouldSend = false;
 
-      if (task.type == typeAck) {
+      if (task.type == MeshPacket.typeAck) {
         if (task.pendingNeighborIds.contains(peerStableId)) shouldSend = true;
-      } else if (task.type == typeRelay) {
+      } else if (task.type == MeshPacket.typeRelay) {
         if (task.pendingNeighborIds.contains(peerStableId)) continue;
         if (task.sentCount >= 3) continue;
 
@@ -391,7 +383,7 @@ class MessageHandler {
           );
 
           await isar.db.writeTxn(() async {
-            if (task.type == typeAck) {
+            if (task.type == MeshPacket.typeAck) {
               task.pendingNeighborIds = task.pendingNeighborIds
                   .where((id) => id != peerStableId)
                   .toList();
@@ -418,8 +410,7 @@ class MessageHandler {
     }
 
     if (useNotifications) {
-      final done = Uint8List(1);
-      done[0] = typeSyncDone;
+      final done = SyncDonePacket();
       final dev = await isar.db.foundDevices
           .where()
           .stableIdEqualTo(peerStableId)
@@ -427,7 +418,7 @@ class MessageHandler {
       if (dev != null) {
         await BLEAdvertiser.sendNotification(
           characteristicUuid: BLEAdvertiser.messageCharUuid,
-          value: done,
+          value: done.toBytes(),
           deviceId: dev.remoteId,
         );
       }
@@ -464,17 +455,17 @@ class MessageHandler {
       for (final c in chunks) {
         await centralWriteChar.write(c, withoutResponse: false);
       }
+
     }
   }
 
   static void _enqueueTerminalAck(int neighborId, int originId, int msgId) async {
     final myId = await ProfileManager.getStableDeviceId();
-    final ackPayload = Uint8List(10);
-    final buffer = ByteData.view(ackPayload.buffer);
-    ackPayload[0] = typeAck;
-    buffer.setUint32(1, originId, Endian.big);
-    buffer.setUint32(5, myId, Endian.big);
-    ackPayload[9] = msgId;
+    final packet = AckPacket(
+      targetId: originId,
+      originId: myId,
+      messageId: msgId,
+    );
 
     final isar = IsarService();
     if (isar.isOpen) {
@@ -482,8 +473,8 @@ class MessageHandler {
         ..messageId = msgId
         ..originId = myId
         ..targetId = originId
-        ..type = typeAck
-        ..data = ackPayload
+        ..type = MeshPacket.typeAck
+        ..data = packet.toBytes()
         ..pendingNeighborIds = [neighborId]
         ..createdAt = DateTime.now();
 
@@ -497,53 +488,49 @@ class MessageHandler {
 
   static Future<void> handlePeerIdentity(
     int peerStableId,
-    Uint8List payload,
+    IdentityPacket packet,
   ) async {
     try {
-      if (payload.length < 43) return;
-      final buffer = ByteData.view(payload.buffer);
-      final id = buffer.getUint32(1, Endian.big);
-      final hash = payload.sublist(5, 11);
-      final pubKey = payload.sublist(11, 43);
-      final name = utf8.decode(payload.sublist(43), allowMalformed: true);
-      final hashHex =
-          hash.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-
       final isar = IsarService();
       var dev =
-          await isar.db.foundDevices.where().stableIdEqualTo(id).findFirst();
+          await isar.db.foundDevices.where().stableIdEqualTo(packet.stableId).findFirst();
 
       bool needsPic = false;
       if (dev == null) {
+        final hashHex = packet.profileHash
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
         dev = FoundDevice()
-          ..stableId = id
-          ..name = name
+          ..stableId = packet.stableId
+          ..name = packet.name
           ..profileHash = hashHex
-          ..publicKey = pubKey
+          ..publicKey = packet.publicKey
           ..lastSeen = DateTime.now();
         needsPic = true;
       } else {
+        final hashHex = packet.profileHash
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
         if (dev.profileHash != hashHex) {
           dev.profileHash = hashHex;
           needsPic = true;
         }
-        dev.name = name;
-        dev.publicKey = pubKey;
+        dev.name = packet.name;
+        dev.publicKey = packet.publicKey;
         dev.lastSeen = DateTime.now();
       }
       await isar.putFoundDevice(dev);
 
       if (needsPic) {
-        final req = Uint8List(1);
-        req[0] = typeRequestProfilePic;
-        _waitingForImageFrom = id;
+        final req = RequestProfilePicPacket();
+        _waitingForImageFrom = packet.stableId;
         await BLEAdvertiser.sendNotification(
           characteristicUuid: BLEAdvertiser.messageCharUuid,
-          value: req,
+          value: req.toBytes(),
           deviceId: dev.remoteId,
         );
       } else {
-        await pushQueuedDataToPeer(id, useNotifications: true);
+        await pushQueuedDataToPeer(packet.stableId, useNotifications: true);
       }
     } catch (e) {
       _log.severe('Error handling peer identity: $e');
@@ -581,12 +568,10 @@ class MessageHandler {
     final mtu = BLEAdvertiser.getMtuForDevice(remoteId);
     final maxChunkSize = (mtu - 10).clamp(20, 500);
 
-    final payloadWithType = Uint8List(1 + pic.length);
-    payloadWithType[0] = typeProfilePic;
-    payloadWithType.setRange(1, payloadWithType.length, pic);
+    final packet = ProfilePicPacket(pic);
 
     final chunks = ChunkedTransferManager.generateChunks(
-      payloadWithType,
+      packet.toBytes(),
       0,
       maxChunkSize: maxChunkSize,
     );
@@ -641,6 +626,16 @@ class MessageHandler {
         }
       });
     }
+  }
+
+  static Future<void> handleIncomingMessage({
+    required int senderStableId,
+    required List<int> data,
+  }) async {
+    ChunkedTransferManager.handleIncomingChunk(
+      senderStableId: senderStableId,
+      data: Uint8List.fromList(data),
+    );
   }
 
   static Future<void> handleOutgoingMessage({
@@ -744,20 +739,15 @@ class MessageHandler {
 
     if (device == null || device.publicKey == null) return null;
 
-    final Uint8List cleartext;
+    final MeshPacket clearPacket;
     if (image != null) {
-      cleartext = Uint8List(1 + image.length);
-      cleartext[0] = typeImage;
-      cleartext.setRange(1, cleartext.length, image);
+      clearPacket = ImagePacket(image);
     } else {
-      final textBytes = utf8.encode(text ?? "");
-      cleartext = Uint8List(1 + textBytes.length);
-      cleartext[0] = typeText;
-      cleartext.setRange(1, cleartext.length, textBytes);
+      clearPacket = TextPacket(text ?? "");
     }
 
     return await _encryptMessage(
-      cleartext,
+      clearPacket.toBytes(),
       Uint8List.fromList(device.publicKey!),
     );
   }
@@ -777,26 +767,15 @@ class MessageHandler {
 
     final myId = await ProfileManager.getStableDeviceId();
     final msgId = Random().nextInt(256);
-    final relayPayload = Uint8List(11 + encrypted.length);
-    final buffer = ByteData.view(relayPayload.buffer);
 
-    relayPayload[0] = typeRelay;
-    buffer.setUint32(1, targetStableId, Endian.big);
-    buffer.setUint32(5, myId, Endian.big);
-    relayPayload[9] = msgId;
-    relayPayload[10] = ttl;
-    relayPayload.setRange(11, relayPayload.length, encrypted);
-
-    return relayPayload;
-  }
-
-  static Future<void> handleIncomingMessage({
-    required int senderStableId,
-    required List<int> data,
-  }) async {
-    ChunkedTransferManager.handleIncomingChunk(
-      senderStableId: senderStableId,
-      data: Uint8List.fromList(data),
+    final relayPacket = RelayPacket(
+      targetId: targetStableId,
+      originId: myId,
+      messageId: msgId,
+      ttl: ttl,
+      encryptedPayload: encrypted,
     );
+
+    return relayPacket.toBytes();
   }
 }

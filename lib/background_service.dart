@@ -10,6 +10,7 @@ import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/data/mesh_packet.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/profile_manager.dart';
@@ -622,8 +623,9 @@ Future<void> _fetchFullMetadata(
 
             messageSub = messageChar.onValueReceived.listen((v) {
               if (v.isNotEmpty) {
-                if (v[0] == MessageHandler.typeRequestProfilePic) {
+                if (v[0] == MeshPacket.typeRequestProfilePic) {
                   log.info('Peer $stableId requested our profile picture');
+
                   MessageHandler.streamOurProfilePic(
                       remoteId, stableId, messageChar);
                 } else {
@@ -645,24 +647,22 @@ Future<void> _fetchFullMetadata(
                     .getString('advertising_name_v2') ??
                 "BLE Node";
 
-            final nameBytes = utf8.encode(myName);
-            final idPayload = Uint8List(1 + 4 + 6 + 32 + nameBytes.length);
-            final idBuffer = ByteData.view(idPayload.buffer);
-            idPayload[0] = MessageHandler.typeIdentity;
-            idBuffer.setUint32(1, myId, Endian.big);
-            idPayload.setRange(5, 11, myHash);
-            idPayload.setRange(11, 43, myPubKey);
-            idPayload.setRange(43, idPayload.length, nameBytes);
-
             log.info('Sending our identity to $stableId...');
-            final chunks = ChunkedTransferManager.generateChunks(
-              idPayload,
-              Random().nextInt(256),
-            );
+        final idPacket = IdentityPacket(
+          stableId: myId,
+          profileHash: myHash,
+          publicKey: Uint8List.fromList(myPubKey),
+          name: myName,
+        );
+
+        final chunks = ChunkedTransferManager.generateChunks(
+          idPacket.toBytes(),
+          Random().nextInt(256),
+        );
+
             for (final c in chunks) {
               await messageChar.write(c, withoutResponse: false);
             }
-
             // Push our outbound queue (Step 4)
             await MessageHandler.pushQueuedDataToPeer(
               stableId,
