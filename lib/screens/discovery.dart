@@ -25,6 +25,7 @@ class DiscoveryScreen extends ConsumerWidget {
     final isAdvertising = ref.watch(isAdvertisingProvider);
     final remainingSeconds = statusMap['remainingSeconds'] as int?;
     final statusText = statusMap['status'] as String?;
+    final syncingStableId = statusMap['syncingStableId'] as int?;
 
     return ScaffoldWrapper(
       screen: DiscoveryRoute().location,
@@ -98,6 +99,7 @@ class DiscoveryScreen extends ConsumerWidget {
                       itemCount: devices.length,
                       itemBuilder: (context, index) {
                         final item = devices[index];
+                        final isSyncing = item.stableId == syncingStableId;
                         return ListTile(
                           leading: CircleAvatar(
                             backgroundColor: Theme.of(
@@ -188,8 +190,28 @@ class DiscoveryScreen extends ConsumerWidget {
                                     "ID: ${item.stableId}",
                                     style: const TextStyle(fontSize: 10),
                                   ),
+                                  if (isSyncing) ...[
+                                    const SizedBox(width: 8),
+                                    const SizedBox(
+                                      width: 10,
+                                      height: 10,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      "Syncing...",
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.blue,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
+
                               Text(
                                 "MAC: ${item.remoteId}",
                                 style: const TextStyle(fontSize: 10),

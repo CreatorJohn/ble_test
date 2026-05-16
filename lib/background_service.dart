@@ -320,6 +320,12 @@ Future<void> _startServiceLogic(
             Duration(milliseconds: 1000 + Random().nextInt(2000)),
           );
           lastSyncAttempt[entry.key] = DateTime.now();
+          // Notify UI about which device we are syncing
+          service.invoke('updateProgress', {
+            'value': 1.0,
+            'status': 'Fetching Metadata...',
+            'syncingStableId': entry.key,
+          });
           await _fetchFullMetadata(entry.value, isar, entry.key, log);
         }
         syncQueue.clear();
