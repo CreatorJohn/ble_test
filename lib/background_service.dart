@@ -88,6 +88,12 @@ void onStart(ServiceInstance service) async {
     log.info("BLEAdvertiser already initialized!");
   }
 
+  final bleSupported = await BlePeripheral.isSupported();
+
+  log.info("Is BLE advertising supported? ${bleSupported ? "Yes" : "No"}");
+
+  service.invoke("advertisingSupported", {"value": bleSupported});
+
   runZonedGuarded(
     () async => await _startServiceLogic(service, advertiser),
     (error, stack) => log.severe('Top-level error: $error', error, stack),
@@ -371,10 +377,6 @@ Future<void> _startServiceLogic(
   );
 
   await startSafeScan();
-
-  service.invoke("advertisingSupported", {
-    "value": await BlePeripheral.isSupported(),
-  });
 
   service.on('stopService').listen((_) async {
     await advertiser.stopAdvertising();
