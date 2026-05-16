@@ -122,7 +122,13 @@ class BLEAdvertiser {
                   data: val,
                 );
               } else {
-                _log.warning('Ignoring message from unknown device: $id');
+                // Identity bootstrapping: use a temporary ID derived from MAC
+                // to allow ChunkedTransferManager to collect the full identity payload.
+                final tempId = id.hashCode.abs();
+                MessageHandler.handleIncomingMessage(
+                  senderStableId: tempId,
+                  data: val,
+                );
               }
             });
           }

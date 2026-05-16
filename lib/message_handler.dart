@@ -31,9 +31,14 @@ class MessageHandler {
   static const int typeProfilePic = 0x03;
   static const int typeRelay = 0x04;
   static const int typeAck = 0x05;
+  static const int typeIdentity = 0x06;
+  static const int typeSyncDone = 0x07;
+  static const int typeRequestProfilePic = 0x08;
 
   static final Map<int, DateTime> _seenRelayMessageIds = {};
   static final Map<int, PendingAck> _pendingAcks = {};
+  static final Map<int, Completer<void>> _syncDoneCompleters = {};
+  static int? _waitingForImageFrom;
   static Timer? _cacheCleanupTimer;
 
   static void _startCacheCleanupTimer() {
@@ -117,6 +122,20 @@ class MessageHandler {
             _log.info('TTL expired for relay message $msgId');
             return;
           }
+        } else if (type == typeIdentity) {
+          _log.info('Received Identity Message from $directSenderId');
+          await handlePeerIdentity(directSenderId, fullData);
+          return;
+        } else if (type == typeSyncDone) {
+          _log.info('Received SyncDone from $directSenderId');
+          _syncDoneCompleters[directSenderId]?.complete();
+          return;
+        } else if (type == typeRequestProfilePic) {
+          _log.info('Peer $directSenderId requested our profile picture');
+          // This will be handled by the listener in _fetchFullMetadata (Device A)
+          // or we trigger it if we are Device A.
+          _syncDoneCompleters[directSenderId]?.completeError('request_pic');
+          return;
         } else {
           decryptedData = await _decryptMessage(originSenderId, fullData);
           if (decryptedData == null || decryptedData.isEmpty) return;
@@ -613,5 +632,189 @@ class MessageHandler {
     ackPayload[9] = msgId;
 
     await _pushData(neighbor.remoteId, targetNodeId, ackPayload, msgId);
+  }
+
+  static Future<void> handlePeerIdentity(
+    int peerStableId,
+    Uint8List payload,
+  ) async {
+    try {
+      if (payload.length < 43) return; // 1+4+6+32 + name
+      final buffer = ByteData.view(payload.buffer);
+      final id = buffer.getUint32(1, Endian.big);
+      final hash = payload.sublist(5, 11);
+      final pubKey = payload.sublist(11, 43);
+      final name = utf8.decode(payload.sublist(43), allowMalformed: true);
+      final hashHex =
+          hash.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+      final isar = IsarService();
+      var dev =
+          await isar.db.foundDevices.where().stableIdEqualTo(id).findFirst();
+
+      bool needsPic = false;
+      if (dev == null) {
+        _log.info('New peer identified: $name ($id)');
+        dev = FoundDevice()
+          ..stableId = id
+          ..name = name
+          ..profileHash = hashHex
+          ..publicKey = pubKey
+          ..lastSeen = DateTime.now();
+        needsPic = true;
+      } else {
+        if (dev.profileHash != hashHex) {
+          _log.info('Peer $id updated profile hash');
+          dev.profileHash = hashHex;
+          needsPic = true;
+        }
+        dev.name = name;
+        dev.publicKey = pubKey;
+        dev.lastSeen = DateTime.now();
+      }
+      await isar.putFoundDevice(dev);
+
+      if (needsPic) {
+        _log.info('Requesting profile picture from $id');
+        _waitingForImageFrom = id;
+        final req = Uint8List(1);
+        req[0] = typeRequestProfilePic;
+        // Find remoteId for this peer
+        final remoteId = dev.remoteId;
+        await BLEAdvertiser.sendNotification(
+          characteristicUuid: BLEAdvertiser.messageCharUuid,
+          value: req,
+          deviceId: remoteId,
+        );
+      } else {
+        // No picture needed, push queue immediately
+        await pushQueuedDataToPeer(id, useNotifications: true);
+      }
+    } catch (e) {
+      _log.severe('Error handling peer identity: $e');
+    }
+  }
+
+  static Future<void> pushQueuedDataToPeer(
+    int peerStableId, {
+    required bool useNotifications,
+    BluetoothCharacteristic? centralWriteChar,
+  }) async {
+    final isar = IsarService();
+    final unsent = await isar.db.messages
+        .filter()
+        .receiverStableIdEqualTo(peerStableId)
+        .wasSentEqualTo(false)
+        .findAll();
+
+    _log.info(
+        'Pushing ${unsent.length} queued messages to $peerStableId (Notifications: $useNotifications)');
+
+    for (final msg in unsent) {
+      final payload = await getRelayWrappedPayload(
+        peerStableId,
+        text: msg.content,
+        image: msg.isImage ? msg.data as Uint8List? : null,
+      );
+
+      if (payload != null) {
+        final msgId = payload[9];
+        if (useNotifications) {
+          final dev = await isar.db.foundDevices
+              .where()
+              .stableIdEqualTo(peerStableId)
+              .findFirst();
+          if (dev != null) {
+            await _notifyData(dev.remoteId, payload, msgId);
+          }
+        } else if (centralWriteChar != null) {
+          final chunks = ChunkedTransferManager.generateChunks(payload, msgId);
+          for (final c in chunks) {
+            await centralWriteChar.write(c, withoutResponse: false);
+          }
+        }
+        msg.wasSent = true;
+        await isar.putMessage(msg);
+      }
+    }
+
+    if (useNotifications) {
+      _log.info('Sending SyncDone to $peerStableId');
+      final done = Uint8List(1);
+      done[0] = typeSyncDone;
+      final dev = await isar.db.foundDevices
+          .where()
+          .stableIdEqualTo(peerStableId)
+          .findFirst();
+      if (dev != null) {
+        await BLEAdvertiser.sendNotification(
+          characteristicUuid: BLEAdvertiser.messageCharUuid,
+          value: done,
+          deviceId: dev.remoteId,
+        );
+      }
+    }
+  }
+
+  static Future<void> _notifyData(
+    String remoteId,
+    Uint8List payload,
+    int messageId,
+  ) async {
+    final chunks = ChunkedTransferManager.generateChunks(payload, messageId);
+    for (final chunk in chunks) {
+      await BLEAdvertiser.sendNotification(
+        characteristicUuid: BLEAdvertiser.messageCharUuid,
+        value: chunk,
+        deviceId: remoteId,
+      );
+    }
+  }
+
+  static Future<void> streamOurProfilePic(
+    String remoteId,
+    int peerStableId,
+    BluetoothCharacteristic? centralWriteChar,
+  ) async {
+    final pic = await ProfileManager.getProfilePicture();
+    if (pic == null || pic.isEmpty) return;
+
+    _log.info('Streaming our profile picture to $peerStableId');
+    final payloadWithType = Uint8List(1 + pic.length);
+    payloadWithType[0] = typeProfilePic;
+    payloadWithType.setRange(1, payloadWithType.length, pic);
+
+    final chunks = ChunkedTransferManager.generateChunks(
+      payloadWithType,
+      0, // MsgId for pic transfer usually doesn't matter here
+    );
+
+    for (final chunk in chunks) {
+      if (centralWriteChar != null) {
+        await centralWriteChar.write(chunk, withoutResponse: false);
+      } else {
+        await BLEAdvertiser.sendNotification(
+          characteristicUuid: BLEAdvertiser.messageCharUuid,
+          value: chunk,
+          deviceId: remoteId,
+        );
+      }
+    }
+
+    // After streaming pic, if we are peripheral, we should now push our queue
+    if (_waitingForImageFrom == peerStableId) {
+      _waitingForImageFrom = null;
+      await pushQueuedDataToPeer(peerStableId, useNotifications: true);
+    }
+  }
+
+  static Completer<void> createSyncCompleter(int peerStableId) {
+    final c = Completer<void>();
+    _syncDoneCompleters[peerStableId] = c;
+    return c;
+  }
+
+  static void removeSyncCompleter(int peerStableId) {
+    _syncDoneCompleters.remove(peerStableId);
   }
 }

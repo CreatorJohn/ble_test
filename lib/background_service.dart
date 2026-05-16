@@ -7,6 +7,7 @@ import 'dart:ui';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:ble_test/ble_advertiser.dart';
+import 'package:ble_test/chunked_transfer_manager.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
@@ -281,8 +282,8 @@ Future<void> _startServiceLogic(
     }
   });
 
-  const scanDuration = Duration(seconds: 10),
-      waitDuration = Duration(seconds: 50);
+  const scanDuration = Duration(seconds: 10);
+  Duration currentWaitDuration = const Duration(seconds: 50);
   DateTime? lastScanStartTime;
 
   Future<void> startSafeScan() async {
@@ -350,9 +351,21 @@ Future<void> _startServiceLogic(
   DateTime? lastCycleFinishedTime;
   void runDiscoveryCycle() async {
     lastCycleFinishedTime = null;
+    final cycleStart = DateTime.now();
     await startSafeScan();
     lastCycleFinishedTime = DateTime.now();
-    discoveryTimer = Timer(waitDuration, runDiscoveryCycle);
+
+    final totalDuration = lastCycleFinishedTime!.difference(cycleStart);
+    // If the "Sync part" (total - scan) took >= 50s, shorten next wait
+    if (totalDuration.inSeconds >= 60) {
+      currentWaitDuration = const Duration(seconds: 10);
+      log.info(
+          'Sync took long (${totalDuration.inSeconds}s), shortening next wait to 10s');
+    } else {
+      currentWaitDuration = const Duration(seconds: 50);
+    }
+
+    discoveryTimer = Timer(currentWaitDuration, runDiscoveryCycle);
   }
 
   Timer.periodic(const Duration(milliseconds: 500), (t) {
@@ -375,13 +388,14 @@ Future<void> _startServiceLogic(
         'status': 'Fetching Metadata...',
       });
     } else {
-      // Phase 3: Waiting (50s)
+      // Phase 3: Waiting
       if (lastCycleFinishedTime == null) return;
       final waitElapsed = now.difference(lastCycleFinishedTime!);
-      final rem = waitDuration.inMilliseconds - waitElapsed.inMilliseconds;
+      final rem =
+          currentWaitDuration.inMilliseconds - waitElapsed.inMilliseconds;
       service.invoke('updateProgress', {
-        'value': (rem / waitDuration.inMilliseconds).clamp(0.0, 1.0),
-        'remainingSeconds': (rem / 1000).ceil().clamp(0, 50),
+        'value': (rem / currentWaitDuration.inMilliseconds).clamp(0.0, 1.0),
+        'remainingSeconds': (rem / 1000).ceil().clamp(0, 60),
       });
     }
   });
@@ -512,23 +526,8 @@ Future<void> _fetchFullMetadata(
       }
     }
 
-    if (messageChar != null) {
-      try {
-        await messageChar
-            .setNotifyValue(true)
-            .timeout(const Duration(seconds: 5));
-        messageSub = messageChar.onValueReceived.listen((v) {
-          if (v.isNotEmpty) {
-            MessageHandler.handleIncomingMessage(
-              senderStableId: stableId,
-              data: v,
-            );
-          }
-        });
-      } catch (_) {}
-    }
-
     if (hashChar != null) {
+
       final hashBytes = await robustRead(hashChar);
       if (hashBytes.isEmpty) return;
       final hashHex = hashBytes
@@ -620,6 +619,78 @@ Future<void> _fetchFullMetadata(
         } else {
           await isar.putFoundDevice(dev);
         }
+
+        // --- START BIDIRECTIONAL SYNC (Steps 3-7) ---
+        if (messageChar != null) {
+          try {
+            await messageChar
+                .setNotifyValue(true)
+                .timeout(const Duration(seconds: 5));
+
+            final syncDoneCompleter = MessageHandler.createSyncCompleter(stableId);
+
+            messageSub = messageChar.onValueReceived.listen((v) {
+              if (v.isNotEmpty) {
+                if (v[0] == MessageHandler.typeRequestProfilePic) {
+                  log.info('Peer $stableId requested our profile picture');
+                  MessageHandler.streamOurProfilePic(
+                      remoteId, stableId, messageChar);
+                } else {
+                  MessageHandler.handleIncomingMessage(
+                    senderStableId: stableId,
+                    data: v,
+                  );
+                }
+              }
+            });
+
+            // Send our identity (Step 3)
+            final myId = await ProfileManager.getStableDeviceId();
+            final myHash = await ProfileManager.getProfileHash();
+            final myPubKey =
+                (await (await ProfileManager.getKeyPair()).extractPublicKey())
+                    .bytes;
+            final myName = (await SharedPreferences.getInstance())
+                    .getString('advertising_name_v2') ??
+                "BLE Node";
+
+            final nameBytes = utf8.encode(myName);
+            final idPayload = Uint8List(1 + 4 + 6 + 32 + nameBytes.length);
+            final idBuffer = ByteData.view(idPayload.buffer);
+            idPayload[0] = MessageHandler.typeIdentity;
+            idBuffer.setUint32(1, myId, Endian.big);
+            idPayload.setRange(5, 11, myHash);
+            idPayload.setRange(11, 43, myPubKey);
+            idPayload.setRange(43, idPayload.length, nameBytes);
+
+            log.info('Sending our identity to $stableId...');
+            final chunks = ChunkedTransferManager.generateChunks(
+              idPayload,
+              Random().nextInt(256),
+            );
+            for (final c in chunks) {
+              await messageChar.write(c, withoutResponse: false);
+            }
+
+            // Push our outbound queue (Step 4)
+            await MessageHandler.pushQueuedDataToPeer(
+              stableId,
+              useNotifications: false,
+              centralWriteChar: messageChar,
+            );
+
+            // Wait for Peer to finish its work (Step 7)
+            log.info('Waiting for peer $stableId to signal SyncDone...');
+            await syncDoneCompleter.future.timeout(const Duration(seconds: 30));
+            log.info('Peer $stableId signaled SyncDone.');
+          } catch (e) {
+            log.warning(
+                'Bidirectional sync failed or timed out for $stableId: $e');
+          } finally {
+            MessageHandler.removeSyncCompleter(stableId);
+          }
+        }
+        // --- END BIDIRECTIONAL SYNC ---
       }
     }
   } catch (e) {
