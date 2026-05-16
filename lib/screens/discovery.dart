@@ -21,9 +21,10 @@ class DiscoveryScreen extends ConsumerWidget {
     final isRunning = ref.watch(isServiceRunningProvider).value ?? false;
     final isScanning = ref.watch(isScanningProvider).value ?? false;
     final progress = ref.watch(scanProgressProvider).value ?? 0.0;
-    final scanStatus = ref.watch(scanStatusProvider).value ?? {};
+    final statusMap = ref.watch(scanStatusProvider).value ?? {};
     final isAdvertising = ref.watch(isAdvertisingProvider);
-    final remainingSeconds = scanStatus['remainingSeconds'] as int?;
+    final remainingSeconds = statusMap['remainingSeconds'] as int?;
+    final statusText = statusMap['status'] as String?;
 
     return ScaffoldWrapper(
       screen: DiscoveryRoute().location,
@@ -48,6 +49,7 @@ class DiscoveryScreen extends ConsumerWidget {
                 _StatusIndicator(
                   isRunning: isRunning,
                   isScanning: isScanning,
+                  isFetching: statusText == 'Fetching Metadata...',
                   progress: progress,
                 ),
               ],
@@ -70,13 +72,13 @@ class DiscoveryScreen extends ConsumerWidget {
                 children: [
                   LinearProgressIndicator(
                     value: progress,
-                    color: progress > 0.0 ? null : Colors.orange,
+                    color: statusText != null ? Colors.blue : (progress > 0.0 ? null : Colors.orange),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isScanning
+                    statusText ?? (isScanning
                         ? "Scanning..."
-                        : "Waiting for next cycle...${remainingSeconds != null ? ' ($remainingSeconds s)' : ''}",
+                        : "Waiting for next cycle...${remainingSeconds != null ? ' ($remainingSeconds s)' : ''}"),
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
@@ -539,11 +541,13 @@ class _ProfileInfo extends StatelessWidget {
 class _StatusIndicator extends StatelessWidget {
   final bool isRunning;
   final bool isScanning;
+  final bool isFetching;
   final double progress;
 
   const _StatusIndicator({
     required this.isRunning,
     required this.isScanning,
+    required this.isFetching,
     required this.progress,
   });
 
@@ -558,6 +562,9 @@ class _StatusIndicator extends StatelessWidget {
     } else if (isScanning) {
       label = "SCANNING";
       color = Colors.green;
+    } else if (isFetching) {
+      label = "SYNCING";
+      color = Colors.blue;
     } else {
       label = "WAITING";
       color = Colors.orange;
