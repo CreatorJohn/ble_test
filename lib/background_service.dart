@@ -171,23 +171,6 @@ Future<void> _startServiceLogic(
   final myStableId = await ProfileManager.getStableDeviceId();
   final Map<int, BluetoothDevice> syncQueue = {};
   final Map<int, DateTime> lastSyncAttempt = {};
-  final List<Map<String, dynamic>> messageQueue = [];
-
-  Future<void> processMessageQueue() async {
-    if (isScanOperationInProgress || messageQueue.isEmpty) return;
-    final toSend = List<Map<String, dynamic>>.from(messageQueue);
-    messageQueue.clear();
-    for (final msg in toSend) {
-      try {
-        await MessageHandler.sendMessage(
-          targetStableId: msg['targetId'],
-          content: msg['content'],
-        );
-      } catch (e) {
-        log.warning('Failed to send queued message to ${msg['targetId']}: $e');
-      }
-    }
-  }
 
   FlutterBluePlus.scanResults.listen((results) async {
     if (!isar.isOpen) return;
@@ -343,7 +326,6 @@ Future<void> _startServiceLogic(
       }
     } finally {
       isScanOperationInProgress = false;
-      await processMessageQueue();
       if (needsTrailingUpdate && advertisingOn) updateAd();
     }
   }
@@ -441,8 +423,10 @@ Future<void> _startServiceLogic(
     final targetId = e?['targetId'];
     final content = e?['content'];
     if (targetId is int && content is String) {
-      messageQueue.add({'targetId': targetId, 'content': content});
-      if (!isScanOperationInProgress) await processMessageQueue();
+      await MessageHandler.sendMessage(
+        targetStableId: targetId,
+        content: content,
+      );
     }
   });
 }
