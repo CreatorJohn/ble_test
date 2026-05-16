@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
@@ -370,6 +371,10 @@ Future<void> _startServiceLogic(
   );
 
   await startSafeScan();
+
+  service.invoke("advertisingSupported", {
+    "value": await BlePeripheral.isSupported(),
+  });
 
   service.on('stopService').listen((_) async {
     await advertiser.stopAdvertising();

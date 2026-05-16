@@ -1,4 +1,5 @@
 import 'package:ble_test/components/scaffold_wrapper.dart';
+import 'package:ble_test/providers/advertising_name.dart';
 import 'package:ble_test/router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,12 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canAdvertise = ref.watch(canAdvertiseProvider);
+    String advertiseValue = "?";
+
+    if (canAdvertise == true) advertiseValue = "Yes";
+    if (canAdvertise == false) advertiseValue = "No";
+
     return ScaffoldWrapper(
       centered: true,
       withLog: true,
@@ -18,6 +25,7 @@ class HomeScreen extends ConsumerWidget {
         spacing: 8.0,
         children: [
           const Text("Select app mode"),
+          Text("Can advertise: $advertiseValue"),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               shape: RoundedRectangleBorder(

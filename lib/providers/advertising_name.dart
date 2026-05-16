@@ -6,6 +6,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 part 'advertising_name.g.dart';
 
 @riverpod
+class CanAdvertise extends _$CanAdvertise {
+  final FlutterBackgroundService _service = FlutterBackgroundService();
+
+  @override
+  bool? build() {
+    _service.on("advertisingSupported").listen((event) {
+      bool? supported = event?["value"];
+
+      if (supported == null) return;
+
+      state = supported;
+    });
+
+    return null;
+  }
+}
+
+@riverpod
 class IsAdvertising extends _$IsAdvertising {
   final FlutterBackgroundService _service = FlutterBackgroundService();
   static const String _adKey = 'advertising_on';
