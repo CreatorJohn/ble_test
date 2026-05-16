@@ -262,14 +262,10 @@ class BLEAdvertiser {
                 uuid: profilePicCharUuid,
                 properties: [
                   CharacteristicProperties.read.index,
-                  CharacteristicProperties.write.index,
                   CharacteristicProperties.notify.index,
                   CharacteristicProperties.indicate.index,
                 ],
-                permissions: [
-                  AttributePermissions.readable.index,
-                  AttributePermissions.writeable.index,
-                ],
+                permissions: [AttributePermissions.readable.index],
                 value: _currentProfilePic ?? Uint8List.fromList([]),
               ),
               BleCharacteristic(
