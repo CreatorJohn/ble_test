@@ -16,9 +16,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:isar_community/isar.dart';
 
 class PendingAck {
-  final int upstreamNodeId;
+  final Set<int> upstreamNodeIds;
   final DateTime timestamp;
-  PendingAck(this.upstreamNodeId, this.timestamp);
+  PendingAck(this.upstreamNodeIds, this.timestamp);
 }
 
 class MessageHandler {
@@ -93,15 +93,26 @@ class MessageHandler {
           // Cache key: OriginSenderId (32-bit) + MsgId (8-bit)
           final cacheKey = (originSenderId << 8) | msgId;
 
+          final myId = await ProfileManager.getStableDeviceId();
+
           if (_seenRelayMessageIds.containsKey(cacheKey)) {
             _log.info(
               'Dropped duplicate relay message $msgId from $originSenderId',
             );
+            // IF we are the target, re-send ACK just in case the first path failed
+            if (targetId == myId) {
+              _pushAck(directSenderId, originSenderId, msgId).catchError((e) {
+                _log.warning('Failed to re-send inbound ACK for $msgId: $e');
+              });
+            } else {
+              // If we are a relay, add this new neighbor to the breadcrumbs
+              // so we can fan-back the ACK to them as well.
+              _pendingAcks[cacheKey]?.upstreamNodeIds.add(directSenderId);
+            }
             return;
           }
           _seenRelayMessageIds[cacheKey] = DateTime.now();
 
-          final myId = await ProfileManager.getStableDeviceId();
           if (targetId == myId) {
             _log.info(
               'We are the destination for relay message $msgId from $originSenderId',
@@ -121,8 +132,9 @@ class MessageHandler {
               'Forwarding relay message $msgId to $targetId (TTL: $ttl)',
             );
 
-            // Drop Breadcrumb
-            _pendingAcks[cacheKey] = PendingAck(directSenderId, DateTime.now());
+            // Drop Breadcrumb (Initial neighbor)
+            _pendingAcks[cacheKey] =
+                PendingAck({directSenderId}, DateTime.now());
 
             fullData[10] = ttl - 1;
             _forwardRelayPayload(fullData, targetId, directSenderId);
@@ -612,12 +624,16 @@ class MessageHandler {
 
     if (pendingAck != null) {
       _log.info(
-        'Relaying ACK for $msgId to upstream node ${pendingAck.upstreamNodeId}',
+        'Relaying ACK for $msgId back to ${pendingAck.upstreamNodeIds.length} upstream nodes',
       );
-      _pushAck(pendingAck.upstreamNodeId, originId, msgId);
-      _pendingAcks.remove(cacheKey); // First ACK wins
+      for (final upstreamId in pendingAck.upstreamNodeIds) {
+        _pushAck(upstreamId, originId, msgId);
+      }
+      // Clear caches as requested to free memory and allow re-transmissions
+      _pendingAcks.remove(cacheKey);
+      _seenRelayMessageIds.remove(cacheKey);
     } else {
-      _log.info('Dropped orphan ACK for $msgId');
+      _log.info('Dropped orphan ACK for $msgId (No pending breadcrumbs)');
     }
   }
 
