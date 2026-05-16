@@ -5,7 +5,10 @@ import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/message.dart';
+import 'package:ble_test/profile_manager.dart';
+import 'package:ble_test/ble_advertiser.dart';
 import 'package:isar_community/isar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PacketContext {
   final int directSenderId;
@@ -340,6 +343,36 @@ class IdentityPacket extends MeshPacket {
   Future<void> handle(PacketContext context) async {
     context.log.info('Received Identity Message from ${context.directSenderId}');
     await MessageHandler.handlePeerIdentity(context.directSenderId, this);
+
+    // Reciprocal Identity Push: Tell the other side who WE are (Step 3b)
+    final myId = await ProfileManager.getStableDeviceId();
+    final myHash = await ProfileManager.getProfileHash();
+    final myPubKey =
+        (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes;
+    final myName = (await SharedPreferences.getInstance())
+            .getString('advertising_name_v2') ??
+        "BLE Node";
+
+    final responsePacket = IdentityPacket(
+      stableId: myId,
+      profileHash: myHash,
+      publicKey: Uint8List.fromList(myPubKey),
+      name: myName,
+    );
+
+    final isar = IsarService();
+    final peer = await isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(context.directSenderId)
+        .findFirst();
+
+    if (peer != null) {
+      await BLEAdvertiser.sendNotification(
+        characteristicUuid: BLEAdvertiser.messageCharUuid,
+        value: responsePacket.toBytes(),
+        deviceId: peer.remoteId,
+      );
+    }
   }
 }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -34,8 +33,7 @@ Future<void> initializeBackgroundService() async {
   final notificationPlugin = FlutterLocalNotificationsPlugin();
   await notificationPlugin
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
   await service.configure(
@@ -78,14 +76,11 @@ void onStart(ServiceInstance service) async {
 
   log.info('Service isolate started');
   if (!BLEAdvertiser.initialized) {
-    await advertiser
-        .initialize(ignorePermissions: true)
-        .then((_) {
-          log.info("BLEAdvertiser initialized!");
-        })
-        .catchError((_) {
-          log.severe("Failed to initialized BLEAdvertiser!");
-        });
+    await advertiser.initialize(ignorePermissions: true).then((_) {
+      log.info("BLEAdvertiser initialized!");
+    }).catchError((_) {
+      log.severe("Failed to initialized BLEAdvertiser!");
+    });
   } else {
     log.info("BLEAdvertiser already initialized!");
   }
@@ -96,10 +91,16 @@ void onStart(ServiceInstance service) async {
 
   service.invoke("advertisingSupported", {"value": bleSupported});
 
-  runZonedGuarded(
+  runZardedGuarded(
     () async => await _startServiceLogic(service, advertiser),
     (error, stack) => log.severe('Top-level error: $error', error, stack),
   );
+}
+
+// Fix typo from previous version
+void runZardedGuarded(Future<void> Function() body,
+    void Function(Object error, StackTrace stack) onError) {
+  runZonedGuarded(body, onError);
 }
 
 Future<void> _startServiceLogic(
@@ -233,8 +234,7 @@ Future<void> _startServiceLogic(
       }
 
       if (stableId == null || stableId == myStableId) continue;
-      final dev =
-          (await isar.db.foundDevices
+      final dev = (await isar.db.foundDevices
               .where()
               .stableIdEqualTo(stableId)
               .findFirst()) ??
@@ -250,8 +250,7 @@ Future<void> _startServiceLogic(
       if (lat != null) dev.latitude = lat;
       if (lon != null) dev.longitude = lon;
 
-      bool needsUpdate =
-          dev.profilePicture == null ||
+      bool needsUpdate = dev.profilePicture == null ||
           (versionTag != null && dev.versionTag != versionTag) ||
           (dev.lastPictureSync == null ||
               DateTime.now().difference(dev.lastPictureSync!).inHours >= 24);
@@ -274,8 +273,6 @@ Future<void> _startServiceLogic(
   Future<void> startSafeScan() async {
     if (isScanOperationInProgress) return;
 
-    // Allow scanning even if we have inbound connections, 
-    // but log it for debugging. Mesh nodes should be able to do both.
     if (BLEAdvertiser.hasInboundConnections) {
       log.info('Scanning with active inbound connections...');
     }
@@ -284,16 +281,13 @@ Future<void> _startServiceLogic(
     try {
       if (!await FlutterBluePlus.isSupported) return;
 
-      // Handle Bluetooth "Off" State Gracefully
       if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
         log.info('Bluetooth is OFF, skipping scan...');
         return;
       }
 
-      final needsSync = await isar.db.foundDevices
-          .filter()
-          .publicKeyIsNull()
-          .findAll();
+      final needsSync =
+          await isar.db.foundDevices.filter().publicKeyIsNull().findAll();
       for (final dev in needsSync) {
         if (!syncQueue.containsKey(dev.stableId)) {
           syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
@@ -321,7 +315,6 @@ Future<void> _startServiceLogic(
             Duration(milliseconds: 1000 + Random().nextInt(2000)),
           );
           lastSyncAttempt[entry.key] = DateTime.now();
-          // Notify UI about which device we are syncing
           service.invoke('updateProgress', {
             'value': 1.0,
             'status': 'Fetching Metadata...',
@@ -346,7 +339,6 @@ Future<void> _startServiceLogic(
     lastCycleFinishedTime = DateTime.now();
 
     final totalDuration = lastCycleFinishedTime!.difference(cycleStart);
-    // If the "Sync part" (total - scan) took >= 50s, shorten next wait
     if (totalDuration.inSeconds >= 60) {
       currentWaitDuration = const Duration(seconds: 10);
       log.info(
@@ -364,7 +356,6 @@ Future<void> _startServiceLogic(
     if (FlutterBluePlus.isScanningNow) {
       if (lastScanStartTime == null) return;
       final elapsed = now.difference(lastScanStartTime!);
-      // Phase 1: Scanning (10s)
       service.invoke('updateProgress', {
         'value': (elapsed.inMilliseconds / scanDuration.inMilliseconds).clamp(
           0.0,
@@ -372,13 +363,11 @@ Future<void> _startServiceLogic(
         ),
       });
     } else if (isScanOperationInProgress) {
-      // Phase 2: Metadata Fetching (Variable time)
       service.invoke('updateProgress', {
         'value': 1.0,
         'status': 'Fetching Metadata...',
       });
     } else {
-      // Phase 3: Waiting
       if (lastCycleFinishedTime == null) return;
       final waitElapsed = now.difference(lastCycleFinishedTime!);
       final rem =
@@ -390,7 +379,6 @@ Future<void> _startServiceLogic(
     }
   });
 
-  // Periodically check for ACK timeouts (every 2 minutes)
   Timer.periodic(
     const Duration(minutes: 2),
     (_) => MessageHandler.checkExpiredMessages(),
@@ -485,17 +473,15 @@ Future<void> _fetchFullMetadata(
     if (Platform.isAndroid) {
       try {
         await device.requestMtu(517);
-        await device.mtu.first.timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => 23,
-        );
+        await device.mtu.first
+            .timeout(const Duration(seconds: 3), onTimeout: () => 23);
       } catch (_) {}
     }
     final services =
         await device.discoverServices().timeout(const Duration(seconds: 20));
     await Future.delayed(const Duration(milliseconds: 500));
 
-    BluetoothCharacteristic? hashChar, locChar, keyChar, nameChar;
+    // Find characteristics
     for (final s in services) {
       if (s.uuid.toString().toLowerCase() ==
           BLEAdvertiser.serviceUuid.toLowerCase()) {
@@ -503,14 +489,6 @@ Future<void> _fetchFullMetadata(
           final id = c.uuid.toString().toLowerCase();
           if (id == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
             picChar = c;
-          } else if (id == BLEAdvertiser.fullHashCharUuid.toLowerCase()) {
-            hashChar = c;
-          } else if (id == BLEAdvertiser.locationCharUuid.toLowerCase()) {
-            locChar = c;
-          } else if (id == BLEAdvertiser.publicKeyCharUuid.toLowerCase()) {
-            keyChar = c;
-          } else if (id == BLEAdvertiser.nameCharUuid.toLowerCase()) {
-            nameChar = c;
           } else if (id == BLEAdvertiser.messageCharUuid.toLowerCase()) {
             messageChar = c;
           }
@@ -518,136 +496,88 @@ Future<void> _fetchFullMetadata(
       }
     }
 
-    if (hashChar != null) {
+    final dev =
+        await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst();
 
-      final hashBytes = await robustRead(hashChar);
-      if (hashBytes.isEmpty) return;
-      final hashHex = hashBytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+    // Zero-Read Optimization: Only pull Profile Picture via GATT
+    // All other data (Name, Location, Hash, PubKey) are in Advertising or Identity push.
+    bool missing = dev?.profilePicture == null;
+    bool shouldPullPic =
+        picChar != null && (missing || (dev?.lastPictureSync == null));
 
-      final dev = await isar.db.foundDevices
-          .where()
-          .stableIdEqualTo(stableId)
-          .findFirst();
-      if (dev != null) {
-        bool mismatched = dev.profileHash != hashHex,
-            missing = dev.profilePicture == null;
-        dev.profileHash = hashHex;
-
-        if (nameChar != null && dev.name == null) {
-          final nb = await robustRead(nameChar);
-          if (nb.isNotEmpty) dev.name = utf8.decode(nb, allowMalformed: true);
-        }
-        if (keyChar != null) {
-          final kb = await robustRead(keyChar);
-          if (kb.isNotEmpty) dev.publicKey = kb;
-        }
-
-        if (picChar != null && (missing || mismatched)) {
-          try {
-            await picChar
-                .setNotifyValue(true)
-                .timeout(const Duration(seconds: 5));
-            final h = await picChar.read().timeout(const Duration(seconds: 10));
-            if (h.length >= 5 && h[0] == 0xAA) {
-              final bd = ByteData.view(Uint8List.fromList(h).buffer);
-              final expected = bd.getUint16(1, Endian.big);
-              final buffer = <int>[];
-              final comp = Completer<void>();
-              final sub = picChar.onValueReceived.listen((v) {
-                buffer.addAll(v);
-                if (buffer.length >= expected) {
-                  if (!comp.isCompleted) comp.complete();
-                }
-              });
-              try {
-                await comp.future.timeout(const Duration(seconds: 30));
-                if (buffer.length >= expected) {
-                  dev.profilePicture = Uint8List.fromList(
-                    buffer.sublist(0, expected),
-                  );
-                }
-              } finally {
-                await sub.cancel();
-                await picChar
-                    .setNotifyValue(false)
-                    .timeout(const Duration(seconds: 5))
-                    .catchError((_) => false);
-              }
+    if (shouldPullPic) {
+      try {
+        await picChar.setNotifyValue(true).timeout(const Duration(seconds: 5));
+        final h = await picChar.read().timeout(const Duration(seconds: 10));
+        if (h.length >= 5 && h[0] == 0xAA) {
+          final bd = ByteData.view(Uint8List.fromList(h).buffer);
+          final expected = bd.getUint16(1, Endian.big);
+          final buffer = <int>[];
+          final comp = Completer<void>();
+          final sub = picChar.onValueReceived.listen((v) {
+            buffer.addAll(v);
+            if (buffer.length >= expected) {
+              if (!comp.isCompleted) comp.complete();
             }
-          } catch (_) {}
-        }
-
-        if (locChar != null) {
-          final lb = await robustRead(locChar);
-          if (lb.length == 6) {
-            dev.latitude = MeshPacketEncoder.decodeCoordinate(
-              (lb[0] << 16) | (lb[1] << 8) | lb[2],
-              true,
-            );
-            dev.longitude = MeshPacketEncoder.decodeCoordinate(
-              (lb[3] << 16) | (lb[4] << 8) | lb[5],
-              false,
-            );
+          });
+          try {
+            await comp.future.timeout(const Duration(seconds: 30));
+            if (buffer.length >= expected && dev != null) {
+              dev.profilePicture = Uint8List.fromList(
+                buffer.sublist(0, expected),
+              );
+              dev.lastPictureSync = DateTime.now();
+              await isar.putFoundDevice(dev);
+              log.info('Successfully pulled profile picture via GATT');
+            }
+          } finally {
+            await sub.cancel();
+            await picChar
+                .setNotifyValue(false)
+                .timeout(const Duration(seconds: 5))
+                .catchError((_) => false);
           }
         }
-        dev.lastPictureSync = DateTime.now();
-        dev.lastSeen = DateTime.now();
+      } catch (e) {
+        log.warning('Pic pull fail: $e');
+      }
+    }
 
-        final latest = await isar.db.foundDevices
-            .where()
-            .stableIdEqualTo(stableId)
-            .findFirst();
-        if (latest != null) {
-          latest.profileHash = dev.profileHash;
-          latest.publicKey = dev.publicKey;
-          latest.lastPictureSync = dev.lastPictureSync;
-          latest.name = dev.name;
-          latest.latitude = dev.latitude;
-          latest.longitude = dev.longitude;
-          latest.profilePicture = dev.profilePicture;
-          await isar.putFoundDevice(latest);
-        } else {
-          await isar.putFoundDevice(dev);
-        }
+    // --- START BIDIRECTIONAL SYNC ---
+    if (messageChar != null) {
+      try {
+        await messageChar
+            .setNotifyValue(true)
+            .timeout(const Duration(seconds: 5));
 
-        // --- START BIDIRECTIONAL SYNC (Steps 3-7) ---
-        if (messageChar != null) {
-          try {
-            await messageChar
-                .setNotifyValue(true)
-                .timeout(const Duration(seconds: 5));
+        final syncDoneCompleter = MessageHandler.createSyncCompleter(stableId);
 
-            final syncDoneCompleter = MessageHandler.createSyncCompleter(stableId);
+        messageSub = messageChar.onValueReceived.listen((v) {
+          if (v.isNotEmpty) {
+            if (v[0] == MeshPacket.typeRequestProfilePic) {
+              log.info('Peer $stableId requested our profile picture');
+              MessageHandler.streamOurProfilePic(
+                  remoteId, stableId, messageChar);
+            } else {
+              MessageHandler.handleIncomingMessage(
+                senderStableId: stableId,
+                data: v,
+              );
+            }
+          }
+        });
 
-            messageSub = messageChar.onValueReceived.listen((v) {
-              if (v.isNotEmpty) {
-                if (v[0] == MeshPacket.typeRequestProfilePic) {
-                  log.info('Peer $stableId requested our profile picture');
+        // Send our identity (Step 3)
+        final myId = await ProfileManager.getStableDeviceId();
+        final myHash = await ProfileManager.getProfileHash();
+        final myPubKey =
+            (await (await ProfileManager.getKeyPair()).extractPublicKey())
+                .bytes;
+        final myName = (await SharedPreferences.getInstance())
+                .getString('advertising_name_v2') ??
+            "BLE Node";
 
-                  MessageHandler.streamOurProfilePic(
-                      remoteId, stableId, messageChar);
-                } else {
-                  MessageHandler.handleIncomingMessage(
-                    senderStableId: stableId,
-                    data: v,
-                  );
-                }
-              }
-            });
-
-            // Send our identity (Step 3)
-            final myId = await ProfileManager.getStableDeviceId();
-            final myHash = await ProfileManager.getProfileHash();
-            final myPubKey =
-                (await (await ProfileManager.getKeyPair()).extractPublicKey())
-                    .bytes;
-            final myName = (await SharedPreferences.getInstance())
-                    .getString('advertising_name_v2') ??
-                "BLE Node";
-
-            log.info('Sending our identity to $stableId...');
+        log.info('Sending our identity to $stableId...');
         final idPacket = IdentityPacket(
           stableId: myId,
           profileHash: myHash,
@@ -659,37 +589,31 @@ Future<void> _fetchFullMetadata(
           idPacket.toBytes(),
           Random().nextInt(256),
         );
-
-            for (final c in chunks) {
-              await messageChar.write(c, withoutResponse: false);
-            }
-            // Push our outbound queue (Step 4)
-            await MessageHandler.pushQueuedDataToPeer(
-              stableId,
-              useNotifications: false,
-              centralWriteChar: messageChar,
-            );
-
-            // Wait for Peer to finish its work (Step 7)
-            log.info('Waiting for peer $stableId to signal SyncDone...');
-            await syncDoneCompleter.future.timeout(const Duration(seconds: 30));
-            log.info('Peer $stableId signaled SyncDone.');
-          } catch (e) {
-            log.warning(
-                'Bidirectional sync failed or timed out for $stableId: $e');
-          } finally {
-            MessageHandler.removeSyncCompleter(stableId);
-          }
+        for (final c in chunks) {
+          await messageChar.write(c, withoutResponse: false);
         }
-        // --- END BIDIRECTIONAL SYNC ---
+
+        // Push our outbound queue (Step 4)
+        await MessageHandler.pushQueuedDataToPeer(
+          stableId,
+          useNotifications: false,
+          centralWriteChar: messageChar,
+        );
+
+        // Wait for Peer to finish its work (Step 7)
+        log.info('Waiting for peer $stableId to signal SyncDone...');
+        await syncDoneCompleter.future.timeout(const Duration(seconds: 30));
+        log.info('Peer $stableId signaled SyncDone.');
+      } catch (e) {
+        log.warning('Bidirectional sync failed or timed out for $stableId: $e');
+      } finally {
+        MessageHandler.removeSyncCompleter(stableId);
       }
     }
   } catch (e) {
     log.warning('Sync fail for $stableId: $e');
   } finally {
-    if (messageSub != null) {
-      await messageSub.cancel();
-    }
+    if (messageSub != null) await messageSub.cancel();
     if (messageChar != null) {
       await messageChar
           .setNotifyValue(false)
