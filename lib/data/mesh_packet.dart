@@ -1,5 +1,27 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:logging/logging.dart';
+import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/message_handler.dart';
+import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/message.dart';
+import 'package:isar_community/isar.dart';
+
+class PacketContext {
+  final int directSenderId;
+  final IsarService isar;
+  final int myId;
+  final Logger log;
+  final Future<void> Function(int senderId, Uint8List data) processInnerPayload;
+
+  PacketContext({
+    required this.directSenderId,
+    required this.isar,
+    required this.myId,
+    required this.log,
+    required this.processInnerPayload,
+  });
+}
 
 abstract class MeshPacket {
   static const int typeText = 0x01;
@@ -13,6 +35,7 @@ abstract class MeshPacket {
 
   int get type;
   Uint8List toBytes();
+  Future<void> handle(PacketContext context);
 
   static MeshPacket parse(Uint8List data) {
     if (data.isEmpty) throw Exception("Empty packet data");
@@ -60,6 +83,18 @@ class TextPacket extends MeshPacket {
   factory TextPacket.fromBytes(Uint8List data) {
     return TextPacket(utf8.decode(data.sublist(1)));
   }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    final message = Message()
+      ..senderStableId = context.directSenderId
+      ..receiverStableId = context.myId
+      ..content = text
+      ..timestamp = DateTime.now()
+      ..isReceived = true
+      ..isImage = false;
+    await context.isar.putMessage(message);
+  }
 }
 
 class ImagePacket extends MeshPacket {
@@ -80,6 +115,19 @@ class ImagePacket extends MeshPacket {
   factory ImagePacket.fromBytes(Uint8List data) {
     return ImagePacket(data.sublist(1));
   }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    final message = Message()
+      ..senderStableId = context.directSenderId
+      ..receiverStableId = context.myId
+      ..content = "[Image]"
+      ..timestamp = DateTime.now()
+      ..isReceived = true
+      ..isImage = true
+      ..data = imageData;
+    await context.isar.putMessage(message);
+  }
 }
 
 class ProfilePicPacket extends MeshPacket {
@@ -99,6 +147,26 @@ class ProfilePicPacket extends MeshPacket {
 
   factory ProfilePicPacket.fromBytes(Uint8List data) {
     return ProfilePicPacket(data.sublist(1));
+  }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    final device = await context.isar.db.foundDevices
+        .where()
+        .stableIdEqualTo(context.directSenderId)
+        .findFirst();
+    if (device != null) {
+      device.profilePicture = imageData;
+      device.lastPictureSync = DateTime.now();
+      await context.isar.putFoundDevice(device);
+      context.log.info('Saved profile picture for ${context.directSenderId}');
+    }
+
+    if (MessageHandler.isWaitingForImage(context.directSenderId)) {
+      MessageHandler.clearWaitingForImage();
+      await MessageHandler.pushQueuedDataToPeer(context.directSenderId,
+          useNotifications: true);
+    }
   }
 }
 
@@ -144,6 +212,47 @@ class RelayPacket extends MeshPacket {
       encryptedPayload: data.sublist(11),
     );
   }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    final cacheKey = (originId << 8) | messageId;
+
+    if (MessageHandler.hasSeenMessage(cacheKey)) {
+      if (targetId == context.myId) {
+        MessageHandler.enqueueTerminalAck(
+            context.directSenderId, originId, messageId);
+      } else {
+        MessageHandler.addNeighborToBreadcrumb(cacheKey, context.directSenderId);
+      }
+      return;
+    }
+    MessageHandler.markMessageSeen(cacheKey);
+
+    if (targetId == context.myId) {
+      context.log.info('We are the target for relay message $messageId');
+      MessageHandler.enqueueTerminalAck(
+          context.directSenderId, originId, messageId);
+
+      final decrypted =
+          await MessageHandler.decryptMessage(originId, encryptedPayload);
+      if (decrypted != null) {
+        await context.processInnerPayload(originId, decrypted);
+      }
+    } else if (ttl > 1) {
+      context.log.info('Enqueuing relay message $messageId for forwarding');
+      MessageHandler.dropBreadcrumb(cacheKey, context.directSenderId);
+
+      final nextPacket = RelayPacket(
+        targetId: targetId,
+        originId: originId,
+        messageId: messageId,
+        ttl: ttl - 1,
+        encryptedPayload: encryptedPayload,
+      );
+      MessageHandler.enqueueForward(
+          nextPacket.toBytes(), targetId, originId, messageId);
+    }
+  }
 }
 
 class AckPacket extends MeshPacket {
@@ -179,6 +288,11 @@ class AckPacket extends MeshPacket {
       originId: buffer.getUint32(5, Endian.big),
       messageId: data[9],
     );
+  }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    await MessageHandler.handleIncomingAck(this);
   }
 }
 
@@ -221,6 +335,12 @@ class IdentityPacket extends MeshPacket {
       name: utf8.decode(data.sublist(43), allowMalformed: true),
     );
   }
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    context.log.info('Received Identity Message from ${context.directSenderId}');
+    await MessageHandler.handlePeerIdentity(context.directSenderId, this);
+  }
 }
 
 class SyncDonePacket extends MeshPacket {
@@ -233,6 +353,12 @@ class SyncDonePacket extends MeshPacket {
   Uint8List toBytes() => Uint8List.fromList([type]);
 
   factory SyncDonePacket.fromBytes(Uint8List data) => SyncDonePacket();
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    context.log.info('Received SyncDone from ${context.directSenderId}');
+    MessageHandler.completeSync(context.directSenderId);
+  }
 }
 
 class RequestProfilePicPacket extends MeshPacket {
@@ -246,4 +372,10 @@ class RequestProfilePicPacket extends MeshPacket {
 
   factory RequestProfilePicPacket.fromBytes(Uint8List data) =>
       RequestProfilePicPacket();
+
+  @override
+  Future<void> handle(PacketContext context) async {
+    context.log.info('Peer ${context.directSenderId} requested our profile picture');
+    MessageHandler.completeSyncWithError(context.directSenderId, 'request_pic');
+  }
 }
