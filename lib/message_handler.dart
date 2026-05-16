@@ -50,7 +50,6 @@ class MessageHandler {
     _cacheCleanupTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       final now = DateTime.now();
 
-      // Formula: maxTTL * (scanDuration + waitDuration) + 20
       const cacheLifetimeSeconds =
           maxTTL * (scanDurationSeconds + waitDurationSeconds) + 20;
 
@@ -59,14 +58,12 @@ class MessageHandler {
             now.difference(timestamp).inSeconds > cacheLifetimeSeconds,
       );
 
-      // Cleanup breadcrumbs (2x cache lifetime)
       _pendingAcks.removeWhere(
         (key, pendingAck) =>
             now.difference(pendingAck.timestamp).inSeconds >
             (cacheLifetimeSeconds * 2),
       );
 
-      // Cleanup persistent RelayTasks (30 minutes TTL)
       final isar = IsarService();
       if (isar.isOpen) {
         () async {
@@ -126,7 +123,6 @@ class MessageHandler {
           _seenRelayMessageIds[cacheKey] = DateTime.now();
 
           if (targetId == myId) {
-            _log.info('We are the target for relay message $msgId');
             _pushAck(directSenderId, originSenderId, msgId).catchError((e) {
               _log.warning('Failed to send inbound ACK for $msgId: $e');
             });
@@ -136,7 +132,6 @@ class MessageHandler {
             if (decryptedData == null || decryptedData.isEmpty) return;
             payloadToProcess = decryptedData;
           } else if (ttl > 1) {
-            _log.info('Enqueuing relay message $msgId for forwarding');
             _pendingAcks[cacheKey] =
                 PendingAck({directSenderId}, DateTime.now());
             fullData[10] = ttl - 1;
@@ -146,15 +141,12 @@ class MessageHandler {
             return;
           }
         } else if (type == typeIdentity) {
-          _log.info('Received Identity Message from $directSenderId');
           await handlePeerIdentity(directSenderId, fullData);
           return;
         } else if (type == typeSyncDone) {
-          _log.info('Received SyncDone from $directSenderId');
           _syncDoneCompleters[directSenderId]?.complete();
           return;
         } else if (type == typeRequestProfilePic) {
-          _log.info('Peer $directSenderId requested our profile picture');
           _syncDoneCompleters[directSenderId]?.completeError('request_pic');
           return;
         } else if (type == typeAck) {
@@ -219,12 +211,10 @@ class MessageHandler {
 
     if (relayPayload == null) throw Exception("Encryption handshake required");
 
-    final messageId = relayPayload[9];
-
     await handleOutgoingMessage(
       receiverStableId: targetStableId,
       content: content,
-      messageId: messageId,
+      messageId: relayPayload[9],
       wasSent: false,
     );
   }
@@ -239,7 +229,7 @@ class MessageHandler {
     if (targetId != myId) return;
 
     if (originId == myId) {
-      _log.info('Message $msgId was delivered successfully!');
+      _log.info('Message $msgId delivered!');
       final isar = IsarService();
       final msg = await isar.db.messages
           .filter()
@@ -256,7 +246,6 @@ class MessageHandler {
     final pendingAck = _pendingAcks[cacheKey];
 
     if (pendingAck != null) {
-      _log.info('Enqueuing ACK fan-back for $msgId');
       final isar = IsarService();
       final task = RelayTask()
         ..messageId = msgId
@@ -298,6 +287,7 @@ class MessageHandler {
     BluetoothCharacteristic? centralWriteChar,
   }) async {
     final isar = IsarService();
+    final myId = await ProfileManager.getStableDeviceId();
 
     // 1. Direct Messages
     final unsent = await isar.db.messages
@@ -328,7 +318,7 @@ class MessageHandler {
 
     // 2. Relay Tasks & ACKs
     final tasks = await isar.db.relayTasks.where().findAll();
-    final myId = await ProfileManager.getStableDeviceId();
+    tasks.sort((a, b) => b.type.compareTo(a.type));
 
     for (final task in tasks) {
       bool shouldSend = false;
@@ -337,6 +327,7 @@ class MessageHandler {
         if (task.pendingNeighborIds.contains(peerStableId)) shouldSend = true;
       } else if (task.type == typeRelay) {
         if (task.pendingNeighborIds.contains(peerStableId)) continue;
+        if (task.sentCount >= 3) continue;
 
         final peerDevice = await isar.db.foundDevices
             .where()
@@ -379,12 +370,21 @@ class MessageHandler {
 
       if (shouldSend) {
         try {
+          final dev = await isar.db.foundDevices
+              .where()
+              .stableIdEqualTo(peerStableId)
+              .findFirst();
+          final mtu = (dev != null)
+              ? BLEAdvertiser.getMtuForDevice(dev.remoteId)
+              : 23;
+
           await _pushOrNotify(
             peerStableId,
             Uint8List.fromList(task.data),
             task.messageId,
             useNotifications,
             centralWriteChar,
+            negotiatedMtu: mtu,
           );
 
           await isar.db.writeTxn(() async {
@@ -399,13 +399,13 @@ class MessageHandler {
               }
             } else {
               task.sentCount++;
-              if (task.sentCount >= 1) {
+              task.pendingNeighborIds = [
+                ...task.pendingNeighborIds,
+                peerStableId
+              ];
+              if (task.sentCount >= 3) {
                 await isar.db.relayTasks.delete(task.id);
               } else {
-                task.pendingNeighborIds = [
-                  ...task.pendingNeighborIds,
-                  peerStableId
-                ];
                 await isar.db.relayTasks.put(task);
               }
             }
@@ -436,8 +436,11 @@ class MessageHandler {
     Uint8List payload,
     int messageId,
     bool useNotifications,
-    BluetoothCharacteristic? centralWriteChar,
-  ) async {
+    BluetoothCharacteristic? centralWriteChar, {
+    int negotiatedMtu = 23,
+  }) async {
+    final maxChunkSize = (negotiatedMtu - 10).clamp(20, 500);
+
     if (useNotifications) {
       final dev = await IsarService()
           .db
@@ -446,10 +449,15 @@ class MessageHandler {
           .stableIdEqualTo(peerStableId)
           .findFirst();
       if (dev != null) {
-        await _notifyData(dev.remoteId, payload, messageId);
+        await _notifyData(dev.remoteId, payload, messageId,
+            maxChunkSize: maxChunkSize);
       }
     } else if (centralWriteChar != null) {
-      final chunks = ChunkedTransferManager.generateChunks(payload, messageId);
+      final chunks = ChunkedTransferManager.generateChunks(
+        payload,
+        messageId,
+        maxChunkSize: maxChunkSize,
+      );
       for (final c in chunks) {
         await centralWriteChar.write(c, withoutResponse: false);
       }
@@ -475,7 +483,10 @@ class MessageHandler {
         .findFirst();
 
     if (neighbor != null) {
-      await _notifyData(neighbor.remoteId, ackPayload, msgId);
+      final mtu = BLEAdvertiser.getMtuForDevice(neighbor.remoteId);
+      final maxChunkSize = (mtu - 10).clamp(20, 500);
+      await _notifyData(neighbor.remoteId, ackPayload, msgId,
+          maxChunkSize: maxChunkSize);
     }
   }
 
@@ -537,9 +548,14 @@ class MessageHandler {
   static Future<void> _notifyData(
     String remoteId,
     Uint8List payload,
-    int messageId,
-  ) async {
-    final chunks = ChunkedTransferManager.generateChunks(payload, messageId);
+    int messageId, {
+    int maxChunkSize = 200,
+  }) async {
+    final chunks = ChunkedTransferManager.generateChunks(
+      payload,
+      messageId,
+      maxChunkSize: maxChunkSize,
+    );
     for (final chunk in chunks) {
       await BLEAdvertiser.sendNotification(
         characteristicUuid: BLEAdvertiser.messageCharUuid,
@@ -557,11 +573,18 @@ class MessageHandler {
     final pic = await ProfileManager.getProfilePicture();
     if (pic == null || pic.isEmpty) return;
 
+    final mtu = BLEAdvertiser.getMtuForDevice(remoteId);
+    final maxChunkSize = (mtu - 10).clamp(20, 500);
+
     final payloadWithType = Uint8List(1 + pic.length);
     payloadWithType[0] = typeProfilePic;
     payloadWithType.setRange(1, payloadWithType.length, pic);
 
-    final chunks = ChunkedTransferManager.generateChunks(payloadWithType, 0);
+    final chunks = ChunkedTransferManager.generateChunks(
+      payloadWithType,
+      0,
+      maxChunkSize: maxChunkSize,
+    );
 
     for (final chunk in chunks) {
       if (centralWriteChar != null) {
