@@ -118,15 +118,18 @@ class BLEAdvertiser {
                 MessageHandler.handleIncomingMessage(
                   senderStableId: dev.stableId,
                   data: val,
+                  remoteId: id,
                 );
               } else {
                 final tempId = id.hashCode.abs();
                 MessageHandler.handleIncomingMessage(
                   senderStableId: tempId,
                   data: val,
+                  remoteId: id,
                 );
               }
             });
+
           }
         }
       } catch (e) {

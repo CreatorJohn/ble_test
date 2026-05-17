@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class PacketContext {
   final int directSenderId;
+  final String? remoteId;
   final IsarService isar;
   final int myId;
   final Logger log;
@@ -19,6 +20,7 @@ class PacketContext {
 
   PacketContext({
     required this.directSenderId,
+    this.remoteId,
     required this.isar,
     required this.myId,
     required this.log,
@@ -342,7 +344,11 @@ class IdentityPacket extends MeshPacket {
   @override
   Future<void> handle(PacketContext context) async {
     context.log.info('Received Identity Message from ${context.directSenderId}');
-    await MessageHandler.handlePeerIdentity(context.directSenderId, this);
+    await MessageHandler.handlePeerIdentity(
+      context.directSenderId,
+      this,
+      remoteId: context.remoteId,
+    );
 
     // Reciprocal Identity Push: Tell the other side who WE are
     final myId = await ProfileManager.getStableDeviceId();

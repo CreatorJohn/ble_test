@@ -16,6 +16,7 @@ class ChunkedTransferManager {
   static void handleIncomingChunk({
     required int senderStableId,
     required Uint8List data,
+    String? remoteId,
   }) {
     if (data.length < 4) return; // Invalid header
 
@@ -43,11 +44,21 @@ class ChunkedTransferManager {
     // Reassembly check: do we have all data chunks?
     final buffer = _buffers[transferKey]!;
     if (buffer.length == dataChunksCount) {
-      _finalizeTransfer(transferKey, senderStableId, dataChunksCount);
+      _finalizeTransfer(
+        key: transferKey,
+        senderId: senderStableId,
+        dataCount: dataChunksCount,
+        remoteId: remoteId,
+      );
     }
   }
 
-  static void _finalizeTransfer(String key, int senderId, int dataCount) {
+  static void _finalizeTransfer({
+    required String key,
+    required int senderId,
+    required int dataCount,
+    String? remoteId,
+  }) {
     final buffer = _buffers[key]!;
     final builder = BytesBuilder();
     for (int i = 0; i < dataCount; i++) {
@@ -65,6 +76,7 @@ class ChunkedTransferManager {
     _completedPayloads.add({
       'senderStableId': senderId,
       'payload': builder.toBytes(),
+      'remoteId': remoteId,
     });
   }
 

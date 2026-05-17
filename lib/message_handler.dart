@@ -82,6 +82,7 @@ class MessageHandler {
     ChunkedTransferManager.onPayloadComplete.listen((event) async {
       final directSenderId = event['senderStableId'] as int;
       final fullData = event['payload'] as Uint8List;
+      final remoteId = event['remoteId'] as String?;
 
       try {
         final packet = MeshPacket.parse(fullData);
@@ -90,6 +91,7 @@ class MessageHandler {
 
         await packet.handle(PacketContext(
           directSenderId: directSenderId,
+          remoteId: remoteId,
           isar: isar,
           myId: myId,
           log: _log,
@@ -98,6 +100,7 @@ class MessageHandler {
             final innerPacket = MeshPacket.parse(innerData);
             await innerPacket.handle(PacketContext(
               directSenderId: originId,
+              remoteId: remoteId,
               isar: isar,
               myId: myId,
               log: _log,
@@ -424,12 +427,15 @@ class MessageHandler {
 
   static Future<void> handlePeerIdentity(
     int peerStableId,
-    IdentityPacket packet,
-  ) async {
+    IdentityPacket packet, {
+    String? remoteId,
+  }) async {
     try {
       final isar = IsarService();
-      var dev =
-          await isar.db.foundDevices.where().stableIdEqualTo(packet.stableId).findFirst();
+      var dev = await isar.db.foundDevices
+          .where()
+          .stableIdEqualTo(packet.stableId)
+          .findFirst();
 
       bool needsPic = false;
       if (dev == null) {
@@ -438,6 +444,8 @@ class MessageHandler {
             .join();
         dev = FoundDevice()
           ..stableId = packet.stableId
+          ..remoteId = remoteId ?? "unknown"
+          ..rssi = -100
           ..name = packet.name
           ..profileHash = hashHex
           ..publicKey = packet.publicKey
@@ -452,6 +460,7 @@ class MessageHandler {
           needsPic = true;
         }
         dev.name = packet.name;
+        if (remoteId != null) dev.remoteId = remoteId;
         dev.publicKey = packet.publicKey;
         dev.lastSeen = DateTime.now();
       }
@@ -566,10 +575,12 @@ class MessageHandler {
   static Future<void> handleIncomingMessage({
     required int senderStableId,
     required List<int> data,
+    String? remoteId,
   }) async {
     ChunkedTransferManager.handleIncomingChunk(
       senderStableId: senderStableId,
       data: Uint8List.fromList(data),
+      remoteId: remoteId,
     );
   }
 

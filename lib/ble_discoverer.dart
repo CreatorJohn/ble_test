@@ -293,7 +293,6 @@ class BLEDiscoverer {
         timeout: scanDuration,
         withServices: [Guid(BLEAdvertiser.serviceUuid)],
         androidScanMode: AndroidScanMode.balanced,
-        oneByOne: true,
       );
 
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
@@ -415,6 +414,7 @@ class BLEDiscoverer {
                 MessageHandler.handleIncomingMessage(
                   senderStableId: stableId,
                   data: v,
+                  remoteId: remoteId,
                 );
               }
             }
