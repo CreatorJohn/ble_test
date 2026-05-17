@@ -1,3 +1,3 @@
 class MeshConstants {
-  static const int manufacturerId = 0x1234;
+  static const int manufacturerId = 0xFFFF;
 }

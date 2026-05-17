@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -23,11 +22,6 @@ class BLEAdvertiser {
 
   static const serviceUuid = 'ab12cd34-56ef-78ab-90cd-ef1234567890';
   static const messageCharUuid = '12345678-90ab-cdef-1234-567890abcdef';
-  static const profilePicCharUuid = '87654321-abcd-ef09-1234-567890fedcba';
-  static const fullHashCharUuid = 'a1b2c3d4-e5f6-4321-8765-abcdef123456';
-  static const locationCharUuid = 'f1e2d3c4-b5a6-4321-8765-abcdef123456';
-  static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
-  static const nameCharUuid = 'c3c4c5c6-d7d8-4321-8765-abcdefabcdef';
 
   static const int manufacturerId = MeshConstants.manufacturerId;
   static const int maxNameLength = 13;
@@ -143,45 +137,10 @@ class BLEAdvertiser {
     });
 
     BlePeripheral.setReadRequestCallback((id, char, offset, val) {
-      final charLower = char.toLowerCase();
-      if (charLower == profilePicCharUuid.toLowerCase() && offset == 0) {
-        final mtu = _deviceMtu[id] ?? 23;
-        final chunkSize = (mtu - 10).clamp(20, 500);
-        _streamProfilePicture(id, chunkSize);
-        final header = _getProfileHeaderSync(chunkSize);
-        return ReadRequestResult(value: header, status: 0);
-      }
       return ReadRequestResult(value: Uint8List.fromList([0x00]), status: 0);
     });
 
     return true;
-  }
-
-  Uint8List _getProfileHeaderSync(int chunkSize) {
-    final bytes = _currentProfilePic ?? Uint8List(0);
-    final header = Uint8List(5);
-    header[0] = 0xAA;
-    final bd = ByteData.view(header.buffer);
-    bd.setUint16(1, bytes.length, Endian.big);
-    bd.setUint16(3, chunkSize, Endian.big);
-    return header;
-  }
-
-  void _streamProfilePicture(String remoteId, int chunkSize) async {
-    final bytes = _currentProfilePic ?? Uint8List(0);
-    int offset = 0;
-    while (offset < bytes.length) {
-      int end = offset + chunkSize;
-      if (end > bytes.length) end = bytes.length;
-      final chunk = bytes.sublist(offset, end);
-      await BlePeripheral.updateCharacteristic(
-        characteristicId: profilePicCharUuid,
-        value: chunk,
-        deviceId: remoteId,
-      );
-      offset = end;
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
   }
 
   Future<void> startAdvertising({
@@ -194,7 +153,8 @@ class BLEAdvertiser {
     _currentProfilePic = await ProfileManager.getProfilePicture();
     _currentFullHash = await ProfileManager.getProfileHash();
     _currentPubKey = Uint8List.fromList(
-        (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes);
+      (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes,
+    );
 
     if (!_servicesAdded) {
       await BlePeripheral.addService(
@@ -212,40 +172,6 @@ class BLEAdvertiser {
               permissions: [AttributePermissions.writeable.index],
               value: Uint8List.fromList([0x00]),
             ),
-            BleCharacteristic(
-              uuid: profilePicCharUuid,
-              properties: [
-                CharacteristicProperties.read.index,
-                CharacteristicProperties.notify.index,
-                CharacteristicProperties.indicate.index,
-              ],
-              permissions: [AttributePermissions.readable.index],
-              value: _currentProfilePic ?? Uint8List.fromList([]),
-            ),
-            BleCharacteristic(
-              uuid: fullHashCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: _currentFullHash ?? Uint8List.fromList([]),
-            ),
-            BleCharacteristic(
-              uuid: locationCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: MeshPacketEncoder.encodeLocation(latitude ?? 0.0, longitude ?? 0.0),
-            ),
-            BleCharacteristic(
-              uuid: publicKeyCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: _currentPubKey ?? Uint8List.fromList([]),
-            ),
-            BleCharacteristic(
-              uuid: nameCharUuid,
-              properties: [CharacteristicProperties.read.index],
-              permissions: [AttributePermissions.readable.index],
-              value: Uint8List.fromList(utf8.encode(localName)),
-            ),
           ],
         ),
       );
@@ -260,22 +186,27 @@ class BLEAdvertiser {
       isOnline: isOnline,
     );
 
-    final scanResponseData = MeshPacketEncoder.encodeScanResponseManufacturerData(
-      latitude: latitude ?? 0.0,
-      longitude: longitude ?? 0.0,
-      profileHash: _currentFullHash ?? Uint8List(6),
-    );
+    final scanResponseData =
+        MeshPacketEncoder.encodeScanResponseManufacturerData(
+          latitude: latitude ?? 0.0,
+          longitude: longitude ?? 0.0,
+          profileHash: _currentFullHash ?? Uint8List(6),
+        );
 
     await BlePeripheral.startAdvertising(
       services: [serviceUuid],
       localName: localName.length > maxNameLength
           ? localName.substring(0, maxNameLength)
           : localName,
-      manufacturerData:
-          ManufacturerData(manufacturerId: manufacturerId, data: manufacturerData),
-      addManufacturerDataInScanResponse: true,
-      scanResponseManufacturerData:
-          ManufacturerData(manufacturerId: manufacturerId, data: scanResponseData),
+      manufacturerData: ManufacturerData(
+        manufacturerId: manufacturerId,
+        data: manufacturerData,
+      ),
+      addManufacturerDataInScanResponse: false, // Move StableId to primary packet
+      scanResponseManufacturerData: ManufacturerData(
+        manufacturerId: manufacturerId,
+        data: scanResponseData,
+      ),
     );
   }
 
@@ -301,6 +232,7 @@ class BLEAdvertiser {
     }
   }
 
-  Stream<bool> get advertisingStatusStream => _advertisingStatusController.stream;
+  Stream<bool> get advertisingStatusStream =>
+      _advertisingStatusController.stream;
   bool get isAdvertising => _isAdvertising;
 }
