@@ -29,7 +29,7 @@ class BLEAdvertiser {
   static bool _initialized = false,
       _servicesAdded = false,
       _isAdvertising = false;
-  static Uint8List? _currentProfilePic, _currentFullHash, _currentPubKey;
+  static Uint8List? _currentFullHash;
   static final Set<String> _connectedDevices = {};
   static final Map<String, int> _deviceMtu = {};
   static final StreamController<Map<String, bool>> _connectionController =
@@ -153,11 +153,9 @@ class BLEAdvertiser {
     bool isOnline = false,
   }) async {
     if (!_initialized) await initialize();
-    _currentProfilePic = await ProfileManager.getProfilePicture();
+    await ProfileManager.getProfilePicture();
     _currentFullHash = await ProfileManager.getProfileHash();
-    _currentPubKey = Uint8List.fromList(
-      (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes,
-    );
+    await (await ProfileManager.getKeyPair()).extractPublicKey();
 
     if (!_servicesAdded) {
       await BlePeripheral.addService(

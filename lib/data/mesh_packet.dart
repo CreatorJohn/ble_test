@@ -5,10 +5,8 @@ import 'package:ble_test/data/isar_service.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/message.dart';
-import 'package:ble_test/profile_manager.dart';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:isar_community/isar.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class PacketContext {
   final int directSenderId;

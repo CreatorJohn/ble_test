@@ -185,8 +185,9 @@ class BLEDiscoverer {
       dev.remoteId = r.device.remoteId.toString();
       dev.rssi = r.rssi;
       dev.lastSeen = DateTime.now();
-      if (r.advertisementData.advName.isNotEmpty)
+      if (r.advertisementData.advName.isNotEmpty) {
         dev.name = r.advertisementData.advName;
+      }
       if (versionTag != null) dev.versionTag = versionTag;
       if (profileHash != null) dev.profileHash = profileHash;
       if (lat != null) dev.latitude = lat;
@@ -203,7 +204,9 @@ class BLEDiscoverer {
       if (needsUpdate) {
         final last = _lastSyncAttempt[stableId];
         if (last == null || DateTime.now().difference(last).inMinutes >= 5) {
-          _syncQueue[stableId] = r.device;
+          if (!_activeSyncs.contains(stableId)) {
+            _syncQueue[stableId] = r.device;
+          }
         }
       }
     }
@@ -296,6 +299,7 @@ class BLEDiscoverer {
             Duration(milliseconds: 1000 + Random().nextInt(2000)),
           );
           _lastSyncAttempt[entry.key] = DateTime.now();
+          _activeSyncs.add(entry.key);
 
           service.invoke('updateProgress', {
             'value': 1.0,
@@ -304,7 +308,11 @@ class BLEDiscoverer {
             'syncingStableId': entry.key,
           });
 
-          await _fetchFullMetadata(entry.value, isar, entry.key, _log);
+          try {
+            await _fetchFullMetadata(entry.value, isar, entry.key, _log);
+          } finally {
+            _activeSyncs.remove(entry.key);
+          }
         }
         _syncQueue.clear();
       }
