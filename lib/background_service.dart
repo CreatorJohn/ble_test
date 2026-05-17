@@ -183,7 +183,8 @@ Future<void> _startServiceLogic(
     }
 
     for (final r in results) {
-      final meshDataRaw = r.advertisementData.manufacturerData[0xFFFF];
+      final meshDataRaw = r.advertisementData.manufacturerData[0x1234] ??
+          r.advertisementData.manufacturerData[0xFFFF];
       if (meshDataRaw == null || meshDataRaw.length < 5) continue;
       final meshData = Uint8List.fromList(meshDataRaw);
       int? stableId, versionTag;

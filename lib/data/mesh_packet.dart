@@ -344,7 +344,7 @@ class IdentityPacket extends MeshPacket {
     context.log.info('Received Identity Message from ${context.directSenderId}');
     await MessageHandler.handlePeerIdentity(context.directSenderId, this);
 
-    // Reciprocal Identity Push: Tell the other side who WE are (Step 3b)
+    // Reciprocal Identity Push: Tell the other side who WE are
     final myId = await ProfileManager.getStableDeviceId();
     final myHash = await ProfileManager.getProfileHash();
     final myPubKey =
@@ -360,13 +360,14 @@ class IdentityPacket extends MeshPacket {
       name: myName,
     );
 
+    // Push back to the sender if we have their remoteId
     final isar = IsarService();
     final peer = await isar.db.foundDevices
         .where()
         .stableIdEqualTo(context.directSenderId)
         .findFirst();
 
-    if (peer != null) {
+    if (peer != null && BLEAdvertiser.isDeviceConnected(peer.remoteId)) {
       await BLEAdvertiser.sendNotification(
         characteristicUuid: BLEAdvertiser.messageCharUuid,
         value: responsePacket.toBytes(),
