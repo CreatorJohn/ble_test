@@ -349,37 +349,6 @@ class IdentityPacket extends MeshPacket {
       this,
       remoteId: context.remoteId,
     );
-
-    // Reciprocal Identity Push: Tell the other side who WE are
-    final myId = await ProfileManager.getStableDeviceId();
-    final myHash = await ProfileManager.getProfileHash();
-    final myPubKey =
-        (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes;
-    final myName = (await SharedPreferences.getInstance())
-            .getString('advertising_name_v2') ??
-        "BLE Node";
-
-    final responsePacket = IdentityPacket(
-      stableId: myId,
-      profileHash: myHash,
-      publicKey: Uint8List.fromList(myPubKey),
-      name: myName,
-    );
-
-    // Push back to the sender if we have their remoteId
-    final isar = IsarService();
-    final peer = await isar.db.foundDevices
-        .where()
-        .stableIdEqualTo(context.directSenderId)
-        .findFirst();
-
-    if (peer != null && BLEAdvertiser.isDeviceConnected(peer.remoteId)) {
-      await BLEAdvertiser.sendNotification(
-        characteristicUuid: BLEAdvertiser.messageCharUuid,
-        value: responsePacket.toBytes(),
-        deviceId: peer.remoteId,
-      );
-    }
   }
 }
 
@@ -397,7 +366,15 @@ class SyncDonePacket extends MeshPacket {
   @override
   Future<void> handle(PacketContext context) async {
     context.log.info('Received SyncDone from ${context.directSenderId}');
-    MessageHandler.completeSync(context.directSenderId);
+    
+    // If we are the peripheral (advertiser), this means A is done, so it's our turn to reciprocate.
+    if (BLEAdvertiser.isDeviceConnected(context.remoteId ?? "")) {
+      context.log.info('Triggering B\'s reciprocal turn for ${context.directSenderId}');
+      MessageHandler.pushReciprocalSync(context.directSenderId, context.remoteId!);
+    } else {
+      // If we are the central, this means B is done, handshake complete.
+      MessageHandler.completeSync(context.directSenderId);
+    }
   }
 }
 

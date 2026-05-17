@@ -474,12 +474,43 @@ class MessageHandler {
           value: req.toBytes(),
           deviceId: dev.remoteId,
         );
-      } else {
-        await pushQueuedDataToPeer(packet.stableId, useNotifications: true);
       }
     } catch (e) {
       _log.severe('Error handling peer identity: $e');
     }
+  }
+
+  static Future<void> pushReciprocalSync(int peerStableId, String remoteId) async {
+    _log.info('Starting reciprocal sync (B\'s turn) for $peerStableId');
+    
+    // 6. Device B sends its identity to device A
+    final myId = await ProfileManager.getStableDeviceId();
+    final myHash = await ProfileManager.getProfileHash();
+    final myPubKey = (await (await ProfileManager.getKeyPair()).extractPublicKey()).bytes;
+    final myName = (await SharedPreferences.getInstance()).getString('advertising_name_v2') ?? "BLE Node";
+
+    final idPacket = IdentityPacket(
+      stableId: myId,
+      profileHash: myHash,
+      publicKey: Uint8List.fromList(myPubKey),
+      name: myName,
+    );
+
+    await _notifyData(remoteId, idPacket.toBytes(), Random().nextInt(256));
+
+    // 7. Device A can request profile picture from device B (handled by A's listener)
+    // 8. Device B sends its profile picture if requested
+    // 9. Device B sends messages and ACKs for device A
+    await pushQueuedDataToPeer(peerStableId, useNotifications: true);
+    
+    // Final SyncDone to signal B is finished
+    _log.info('B is done, signaling final SyncDone to $peerStableId');
+    final done = SyncDonePacket();
+    await BLEAdvertiser.sendNotification(
+      characteristicUuid: BLEAdvertiser.messageCharUuid,
+      value: done.toBytes(),
+      deviceId: remoteId,
+    );
   }
 
   static Future<void> _notifyData(

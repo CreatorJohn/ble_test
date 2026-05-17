@@ -26,6 +26,7 @@ class BLEDiscoverer {
   final Logger _log = Logger('BLEDiscoverer');
   final Map<int, BluetoothDevice> _syncQueue = {};
   final Map<int, DateTime> _lastSyncAttempt = {};
+  final Set<int> _activeSyncs = {};
 
   bool _isScanOperationInProgress = false;
   DateTime? _lastScanStartTime;
@@ -65,6 +66,7 @@ class BLEDiscoverer {
         results: results,
         isar: isar,
         myStableId: myStableId,
+        service: service,
       );
     });
 
@@ -113,27 +115,15 @@ class BLEDiscoverer {
     required List<ScanResult> results,
     required IsarService isar,
     required int myStableId,
+    required ServiceInstance service,
   }) async {
-    _log.info("Scanned ${results.length} results");
     for (final r in results) {
       final mfd = r.advertisementData.manufacturerData;
-      _log.info('Processing ${r.device.remoteId}: MFD Keys: ${mfd.keys.toList()}');
+      final meshDataRaw = mfd[MeshConstants.manufacturerId];
 
-      final meshDataRaw =
-          mfd[MeshConstants.manufacturerId] ?? mfd[0xFFFF];
-
-      if (meshDataRaw == null) {
-        _log.info('  Skipping ${r.device.remoteId}: No mesh manufacturer data found for ID ${MeshConstants.manufacturerId.toRadixString(16)} or 0xFFFF');
-        continue;
-      }
-      
-      if (meshDataRaw.length < 5) {
-        _log.info('  Skipping ${r.device.remoteId}: Mesh data too short (${meshDataRaw.length} bytes)');
-        continue;
-      }
+      if (meshDataRaw == null || meshDataRaw.length < 5) continue;
 
       final meshData = Uint8List.fromList(meshDataRaw);
-      _log.info('  Found mesh data: ${meshData.length} bytes');
       int? stableId, versionTag;
       String? profileHash;
       double? lat, lon;
@@ -293,6 +283,7 @@ class BLEDiscoverer {
         timeout: scanDuration,
         withServices: [Guid(BLEAdvertiser.serviceUuid)],
         androidScanMode: AndroidScanMode.balanced,
+        androidUsesFineLocation: true,
       );
 
       await FlutterBluePlus.isScanning.where((s) => s == false).first;
@@ -332,21 +323,18 @@ class BLEDiscoverer {
     StreamSubscription? messageSub;
 
     try {
+      // 1. A connects to B
       if (BLEAdvertiser.isDeviceConnected(remoteId)) {
         log.info('Using existing connection for $stableId');
       } else {
-        try {
-          await device.disconnect();
-          await Future.delayed(const Duration(seconds: 1));
-        } catch (_) {}
         int attempts = 0;
-        while (attempts < 3 && !establishedByUs) {
+        while (attempts < 2 && !establishedByUs) {
           attempts++;
           try {
             await device.connect(
               autoConnect: false,
               license: License.free,
-              timeout: const Duration(seconds: 30),
+              timeout: const Duration(seconds: 15),
             );
 
             establishedByUs = true;
@@ -354,12 +342,10 @@ class BLEDiscoverer {
           } catch (e) {
             if (e.toString().contains('already_connected')) {
               establishedByUs = true;
-            } else if (e.toString().contains('257')) {
-              await Future.delayed(const Duration(seconds: 5));
             } else {
               await Future.delayed(const Duration(seconds: 2));
             }
-            if (attempts >= 3 && !establishedByUs) rethrow;
+            if (attempts >= 2 && !establishedByUs) rethrow;
           }
         }
       }
@@ -447,15 +433,29 @@ class BLEDiscoverer {
             await messageChar.write(c, withoutResponse: false);
           }
 
+          // 2. A sends identity (already sent above)
+          // 3. A sends profile picture if requested (handled by messageSub listener)
+          // 4. A sends messages and ACKs for device B
           await MessageHandler.pushQueuedDataToPeer(
             stableId,
             useNotifications: false,
             centralWriteChar: messageChar,
           );
 
-          log.info('Waiting for peer $stableId to signal SyncDone...');
-          await syncDoneCompleter.future.timeout(const Duration(seconds: 30));
-          log.info('Peer $stableId signaled SyncDone.');
+          // 5. A signals it is DONE with its turn
+          log.info('A is done, signaling SyncDone to $stableId');
+          final done = SyncDonePacket();
+          final doneChunks = ChunkedTransferManager.generateChunks(
+            done.toBytes(),
+            Random().nextInt(256),
+          );
+          for (final c in doneChunks) {
+            await messageChar.write(c, withoutResponse: false);
+          }
+
+          log.info('Waiting for B ($stableId) to complete its turn...');
+          await syncDoneCompleter.future.timeout(const Duration(seconds: 45));
+          log.info('B ($stableId) signaled SyncDone. Full Handshake Complete.');
         } catch (e) {
           log.warning('Bidirectional sync failed/timed out: $e');
         } finally {
