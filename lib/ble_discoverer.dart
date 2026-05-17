@@ -87,11 +87,12 @@ class BLEDiscoverer {
             0.0,
             1.0,
           ),
+          'status': 'Scanning...',
         });
       } else if (_isScanOperationInProgress) {
         service.invoke('updateProgress', {
           'value': 1.0,
-          'status': 'Fetching Metadata...',
+          'status': 'Syncing...',
         });
       } else {
         if (_lastCycleFinishedTime == null) return;
@@ -298,7 +299,8 @@ class BLEDiscoverer {
 
           service.invoke('updateProgress', {
             'value': 1.0,
-            'status': 'Fetching Metadata...',
+            'status': 'Syncing...',
+            'deviceStatus': 'Initiating Sync...',
             'syncingStableId': entry.key,
           });
 
@@ -324,6 +326,8 @@ class BLEDiscoverer {
 
     try {
       // 1. A connects to B
+      MessageHandler.updateUiProgress('Connecting to $stableId...',
+          syncingStableId: stableId, value: 0.1);
       if (BLEAdvertiser.isDeviceConnected(remoteId)) {
         log.info('Using existing connection for $stableId');
       } else {
@@ -363,6 +367,8 @@ class BLEDiscoverer {
       final services = await device.discoverServices().timeout(
         const Duration(seconds: 20),
       );
+      MessageHandler.updateUiProgress('Discovering Services...',
+          syncingStableId: stableId, value: 0.3);
       await Future.delayed(const Duration(milliseconds: 500));
 
       for (final s in services) {
@@ -418,6 +424,8 @@ class BLEDiscoverer {
               "BLE Node";
 
           log.info('Sending our identity to $stableId...');
+          MessageHandler.updateUiProgress('Sending Identity...',
+              syncingStableId: stableId, value: 0.5);
           final idPacket = IdentityPacket(
             stableId: myId,
             profileHash: myHash,
@@ -436,6 +444,8 @@ class BLEDiscoverer {
           // 2. A sends identity (already sent above)
           // 3. A sends profile picture if requested (handled by messageSub listener)
           // 4. A sends messages and ACKs for device B
+          MessageHandler.updateUiProgress('Syncing Messages...',
+              syncingStableId: stableId, value: 0.7);
           await MessageHandler.pushQueuedDataToPeer(
             stableId,
             useNotifications: false,
@@ -444,6 +454,8 @@ class BLEDiscoverer {
 
           // 5. A signals it is DONE with its turn
           log.info('A is done, signaling SyncDone to $stableId');
+          MessageHandler.updateUiProgress('Waiting for Peer turn...',
+              syncingStableId: stableId, value: 0.9);
           final done = SyncDonePacket();
           final doneChunks = ChunkedTransferManager.generateChunks(
             done.toBytes(),
@@ -456,6 +468,8 @@ class BLEDiscoverer {
           log.info('Waiting for B ($stableId) to complete its turn...');
           await syncDoneCompleter.future.timeout(const Duration(seconds: 45));
           log.info('B ($stableId) signaled SyncDone. Full Handshake Complete.');
+          MessageHandler.updateUiProgress('Sync Complete',
+              syncingStableId: stableId, value: 1.0);
         } catch (e) {
           log.warning('Bidirectional sync failed/timed out: $e');
         } finally {

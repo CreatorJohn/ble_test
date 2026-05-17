@@ -13,6 +13,7 @@ import 'package:logging/logging.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:ble_test/data/found_device.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:isar_community/isar.dart';
 
 class PendingAck {
@@ -25,6 +26,7 @@ class MessageHandler {
   static final Logger _log = Logger('MessageHandler');
   static final _cipher = Chacha20.poly1305Aead();
   static final _exchangeAlgorithm = X25519();
+  static ServiceInstance? _service;
 
   static const int maxTTL = 10;
   static const int scanDurationSeconds = 10;
@@ -77,7 +79,18 @@ class MessageHandler {
     });
   }
 
-  static void initialize() {
+  static void updateUiProgress(String deviceStatus,
+      {int? syncingStableId, double value = 1.0}) {
+    _service?.invoke('updateProgress', {
+      'value': value,
+      'status': 'Syncing...', // Global generic status
+      'deviceStatus': deviceStatus, // Granular per-device status
+      'syncingStableId': syncingStableId,
+    });
+  }
+
+  static void initialize({ServiceInstance? service}) {
+    _service = service;
     _startCacheCleanupTimer();
     ChunkedTransferManager.onPayloadComplete.listen((event) async {
       final directSenderId = event['senderStableId'] as int;
@@ -482,6 +495,8 @@ class MessageHandler {
 
   static Future<void> pushReciprocalSync(int peerStableId, String remoteId) async {
     _log.info('Starting reciprocal sync (B\'s turn) for $peerStableId');
+    updateUiProgress('Exchanging Identity...',
+        syncingStableId: peerStableId, value: 0.5);
     
     // 6. Device B sends its identity to device A
     final myId = await ProfileManager.getStableDeviceId();
@@ -501,10 +516,13 @@ class MessageHandler {
     // 7. Device A can request profile picture from device B (handled by A's listener)
     // 8. Device B sends its profile picture if requested
     // 9. Device B sends messages and ACKs for device A
+    updateUiProgress('Syncing Messages...',
+        syncingStableId: peerStableId, value: 0.8);
     await pushQueuedDataToPeer(peerStableId, useNotifications: true);
     
     // Final SyncDone to signal B is finished
     _log.info('B is done, signaling final SyncDone to $peerStableId');
+    updateUiProgress('Sync Complete', syncingStableId: peerStableId, value: 1.0);
     final done = SyncDonePacket();
     await BLEAdvertiser.sendNotification(
       characteristicUuid: BLEAdvertiser.messageCharUuid,

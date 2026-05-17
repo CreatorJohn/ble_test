@@ -135,7 +135,7 @@ Future<void> _startServiceLogic(
   final isar = IsarService();
   await isar.initialize();
   await isar.pruneDatabase();
-  MessageHandler.initialize();
+  MessageHandler.initialize(service: service);
 
   final myStableId = await ProfileManager.getStableDeviceId();
 

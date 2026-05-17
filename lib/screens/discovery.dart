@@ -50,7 +50,7 @@ class DiscoveryScreen extends ConsumerWidget {
                 _StatusIndicator(
                   isRunning: isRunning,
                   isScanning: isScanning,
-                  isFetching: statusText == 'Fetching Metadata...',
+                  isFetching: statusText == 'Fetching Metadata...' || statusText == 'Syncing...',
                   progress: progress,
                 ),
               ],
@@ -200,9 +200,9 @@ class DiscoveryScreen extends ConsumerWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    const Text(
-                                      "Syncing...",
-                                      style: TextStyle(
+                                    Text(
+                                      statusMap['deviceStatus'] ?? "Syncing...",
+                                      style: const TextStyle(
                                         fontSize: 10,
                                         color: Colors.blue,
                                         fontWeight: FontWeight.bold,
