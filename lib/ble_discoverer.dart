@@ -329,6 +329,7 @@ class BLEDiscoverer {
   ) async {
     final remoteId = device.remoteId.toString();
     bool establishedByUs = false;
+    bool connectionAttempted = false;
     BluetoothCharacteristic? messageChar;
     StreamSubscription? messageSub;
 
@@ -339,9 +340,11 @@ class BLEDiscoverer {
       if (BLEAdvertiser.isDeviceConnected(remoteId)) {
         log.info('Using existing connection for $stableId');
       } else {
+        await Future.delayed(const Duration(seconds: 1)); // Breathe after scan
         int attempts = 0;
         while (attempts < 2 && !establishedByUs) {
           attempts++;
+          connectionAttempted = true;
           try {
             await device.connect(
               autoConnect: false,
@@ -355,6 +358,8 @@ class BLEDiscoverer {
             if (e.toString().contains('already_connected')) {
               establishedByUs = true;
             } else {
+              // Forced disconnect on fail to free GATT slot (Fixes 257)
+              await device.disconnect().catchError((_) {});
               await Future.delayed(const Duration(seconds: 2));
             }
             if (attempts >= 2 && !establishedByUs) rethrow;
@@ -494,7 +499,7 @@ class BLEDiscoverer {
             .timeout(const Duration(seconds: 5))
             .catchError((_) => false);
       }
-      if (establishedByUs) {
+      if (establishedByUs || (connectionAttempted && !establishedByUs)) {
         try {
           log.info('Disconnecting from $stableId...');
           await device.disconnect().timeout(const Duration(seconds: 10));
