@@ -90,30 +90,52 @@ Future<void> _startServiceLogic(
   bool advertisingOn = prefs.getBool('advertising_on') ?? false;
   double currentLat = 0.0, currentLon = 0.0;
   bool isOnline = false, isAdUpdating = false, needsTrailingUpdate = false;
+  DateTime lastAdStartTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
-    if (isAdUpdating || BLEAdvertiser.hasInboundConnections) {
+
+    // Latest data fetch
+    await prefs.reload();
+    currentName = prefs.getString('advertising_name_v2') ?? currentName;
+    
+    final now = DateTime.now();
+    final timeSinceLastStart = now.difference(lastAdStartTime);
+    
+    if (isAdUpdating || 
+        BLEAdvertiser.hasInboundConnections || 
+        timeSinceLastStart < const Duration(seconds: 10)) {
+      log.info('Ad update throttled. Waiting... (Elapsed: ${timeSinceLastStart.inSeconds}s)');
       needsTrailingUpdate = true;
       return;
     }
+
     isAdUpdating = true;
     needsTrailingUpdate = false;
     try {
+      if (advertiser.isAdvertising) {
+        await advertiser.stopAdvertising();
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
       await advertiser.startAdvertising(
         localName: currentName,
         latitude: currentLat,
         longitude: currentLon,
         isOnline: isOnline,
       );
+      lastAdStartTime = DateTime.now();
       await prefs.setBool('advertising_on', true);
       service.invoke("advertisingChange", {"active": true});
     } catch (e) {
       log.severe('Ad update fail: $e');
     }
-    Timer(const Duration(seconds: 5), () {
+
+    Timer(const Duration(seconds: 10), () {
       isAdUpdating = false;
-      if (needsTrailingUpdate && advertisingOn) updateAd();
+      if (needsTrailingUpdate && advertisingOn) {
+        log.info('Executing queued trailing ad update');
+        updateAd();
+      }
     });
   }
 
