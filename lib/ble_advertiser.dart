@@ -9,6 +9,7 @@ import 'package:ble_test/data/mesh_packet.dart';
 import 'package:ble_test/mesh_packet_encoder.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/profile_manager.dart';
+import 'package:ble_test/utils/constants.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'
     hide CharacteristicProperties;
 import 'package:permission_handler/permission_handler.dart';
@@ -28,6 +29,7 @@ class BLEAdvertiser {
   static const publicKeyCharUuid = 'd4c3b2a1-f6e5-4321-8765-abcdefabcdef';
   static const nameCharUuid = 'c3c4c5c6-d7d8-4321-8765-abcdefabcdef';
 
+  static const int manufacturerId = MeshConstants.manufacturerId;
   static const int maxNameLength = 13;
 
   static bool _initialized = false,
@@ -270,10 +272,10 @@ class BLEAdvertiser {
           ? localName.substring(0, maxNameLength)
           : localName,
       manufacturerData:
-          ManufacturerData(manufacturerId: 0x1234, data: manufacturerData),
+          ManufacturerData(manufacturerId: manufacturerId, data: manufacturerData),
       addManufacturerDataInScanResponse: true,
       scanResponseManufacturerData:
-          ManufacturerData(manufacturerId: 0x1234, data: scanResponseData),
+          ManufacturerData(manufacturerId: manufacturerId, data: scanResponseData),
     );
   }
 

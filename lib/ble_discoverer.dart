@@ -1,196 +1,111 @@
-/*
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:ble_test/ble_advertiser.dart';
+import 'package:ble_test/data/found_device.dart';
+import 'package:ble_test/data/isar_service.dart';
+import 'package:ble_test/mesh_packet_encoder.dart';
+import 'package:ble_test/utils/constants.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:logging/logging.dart' show Logger;
-import 'package:permission_handler/permission_handler.dart';
-
-typedef DiscoveredDevice = ({
-  String remoteId,
-  List<String> serviceIds,
-  bool hasTargetService,
-});
+import 'package:isar_community/isar.dart';
 
 class BLEDiscoverer {
-  static bool _initialized = false;
-  static final Logger _log = Logger('BLEDiscoverer');
-
-  const factory BLEDiscoverer() = BLEDiscoverer._internal;
-
-  const BLEDiscoverer._internal();
-
-  Future<bool> initialize() async {
-    if (_initialized) return true;
-
-    // Safety delay for Chromebook/Android container initialization
-    await Future.delayed(const Duration(milliseconds: 500));
-    _initialized = true;
-
-    try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        final permissions = await [
-          Permission.bluetoothScan,
-          Permission.bluetoothConnect,
-          Permission.location,
-          Permission.locationWhenInUse,
-        ].request();
-
-        bool failed = false;
-
-        for (final permission in permissions.entries) {
-          if (permission.value.isDenied) {
-            _log.warning('Permission ${permission.key} denied');
-            failed = true;
-          } else if (permission.value.isPermanentlyDenied) {
-            _log.warning('Permission ${permission.key} permanently denied');
-            failed = true;
-          } else {
-            _log.info('Permission ${permission.key} granted');
-          }
-        }
-
-        if (failed) {
-          _initialized = false;
-          return false;
-        }
-      } else {
-        _log.info('Skipping runtime permissions on non-mobile platform');
-      }
-    } catch (e) {
-      _log.severe('Error requesting permissions: $e');
-      _initialized = false;
-      return false;
-    }
-
-    // Check whether supported using flutter_blue_plus
-    try {
-      final isSupported = await FlutterBluePlus.isSupported == true;
-      if (!isSupported) {
-        _log.severe('BLE Scanner mode is not supported on this device');
-        _initialized = false;
-        return false;
-      }
-
-      FlutterBluePlus.onScanResults.listen((results) {
-        _log.info("Scanned ${results.length} devices");
-      });
-
-      return true;
-    } catch (e) {
-      _log.severe('Error checking support or setting up listener: $e');
-      _initialized = false;
-      return false;
-    }
-  }
-
-  Stream<bool> get isDiscoveringStream => FlutterBluePlus.isScanning;
-
-  Future<List<DiscoveredDevice>> discover({
-    void Function(double progress)? onProgress,
+  /// Processes scan results, updates Isar database, and manages the sync queue.
+  static Future<void> processScanResults({
+    required List<ScanResult> results,
+    required IsarService isar,
+    required int myStableId,
+    required Map<int, BluetoothDevice> syncQueue,
+    required Map<int, DateTime> lastSyncAttempt,
   }) async {
-    if (!_initialized) {
-      _log.warning('BleDiscoverer not initialized, initializing now');
-      final success = await initialize();
+    if (!isar.isOpen) return;
 
-      if (!success) {
-        _log.severe(
-          'Failed to initialize BleDiscoverer, cannot start discovering',
+    for (final r in results) {
+      // Check for our mesh data in common manufacturer IDs (0x1234 or 0xFFFF)
+      final meshDataRaw = r.advertisementData.manufacturerData[MeshConstants.manufacturerId] ??
+          r.advertisementData.manufacturerData[0xFFFF];
+      
+      if (meshDataRaw == null || meshDataRaw.length < 5) continue;
+      final meshData = Uint8List.fromList(meshDataRaw);
+      int? stableId, versionTag;
+      String? profileHash;
+      double? lat, lon;
+
+      if (meshData.length == 5) {
+        final bd = ByteData.view(meshData.buffer);
+        stableId = bd.getUint32(0, Endian.big);
+        versionTag = (meshData[4] >> 2) & 0x3F;
+      } else if (meshData.length == 12) {
+        lat = MeshPacketEncoder.decodeCoordinate(
+          (meshData[0] << 16) | (meshData[1] << 8) | meshData[2],
+          true,
         );
-        throw Exception(
-          'Failed to initialize BleDiscoverer, cannot start discovering',
+        lon = MeshPacketEncoder.decodeCoordinate(
+          (meshData[3] << 16) | (meshData[4] << 8) | meshData[5],
+          false,
         );
+        profileHash = meshData
+            .sublist(6, 12)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
+      } else if (meshData.length >= 17) {
+        final bd = ByteData.view(meshData.buffer);
+        stableId = bd.getUint32(0, Endian.big);
+        versionTag = (meshData[4] >> 2) & 0x3F;
+        lat = MeshPacketEncoder.decodeCoordinate(
+          (meshData[5] << 16) | (meshData[6] << 8) | meshData[7],
+          true,
+        );
+        lon = MeshPacketEncoder.decodeCoordinate(
+          (meshData[8] << 16) | (meshData[9] << 8) | meshData[10],
+          false,
+        );
+        profileHash = meshData
+            .sublist(11, 17)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
+      }
+
+      if (stableId == null) {
+        final dev = await isar.db.foundDevices
+            .where()
+            .remoteIdEqualTo(r.device.remoteId.toString())
+            .findFirst();
+        if (dev != null) stableId = dev.stableId;
+      }
+
+      if (stableId == null || stableId == myStableId) continue;
+      
+      final dev = (await isar.db.foundDevices
+              .where()
+              .stableIdEqualTo(stableId)
+              .findFirst()) ??
+          (FoundDevice()..stableId = stableId);
+      
+      dev.remoteId = r.device.remoteId.toString();
+      dev.rssi = r.rssi;
+      dev.lastSeen = DateTime.now();
+      
+      if (r.advertisementData.advName.isNotEmpty) {
+        dev.name = r.advertisementData.advName;
+      }
+      if (versionTag != null) dev.versionTag = versionTag;
+      if (profileHash != null) dev.profileHash = profileHash;
+      if (lat != null) dev.latitude = lat;
+      if (lon != null) dev.longitude = lon;
+
+      bool needsUpdate = dev.profilePicture == null ||
+          (versionTag != null && dev.versionTag != versionTag) ||
+          (dev.lastPictureSync == null ||
+              DateTime.now().difference(dev.lastPictureSync!).inHours >= 24);
+
+      await isar.putFoundDevice(dev);
+      
+      if (needsUpdate) {
+        final last = lastSyncAttempt[stableId];
+        if (last == null || DateTime.now().difference(last).inMinutes >= 5) {
+          syncQueue[stableId] = r.device;
+        }
       }
     }
-
-    if (FlutterBluePlus.isScanningNow) {
-      _log.severe("Wait until the previous scan is finished");
-      throw Exception("Wait until the previous scan is finished");
-    }
-
-    Timer? timer;
-    const scanTimeout = Duration(seconds: 10);
-
-    _log.info("Starting scan...");
-
-    try {
-      // Android/Chromebook safety: stop any existing scan first
-      await FlutterBluePlus.stopScan();
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      await FlutterBluePlus.startScan(
-        timeout: scanTimeout,
-        androidUsesFineLocation: true, // Required for some Android versions
-      );
-
-      // 1. Wait for scanning to be TRUE (hardware wake up)
-      await FlutterBluePlus.isScanning
-          .where((s) => s)
-          .first
-          .timeout(const Duration(seconds: 2))
-          .catchError((_) => true);
-
-      // 2. NOW start the progress timer so it is synced with actual scanning
-      if (onProgress != null) {
-        timer = Timer.periodic(const Duration(seconds: 1), (t) {
-          onProgress(t.tick / 10);
-          if (t.tick >= 10) t.cancel();
-        });
-      }
-
-      // 3. Wait for scanning to be FALSE (scan completed)
-      await FlutterBluePlus.isScanning
-          .where((s) => !s)
-          .first
-          .timeout(scanTimeout + const Duration(seconds: 2));
-
-      _log.info("Scan finished");
-    } catch (e) {
-      _log.warning("Scan stopped or timed out: $e");
-    } finally {
-      if (onProgress != null) timer?.cancel();
-    }
-
-    // Use a Map to ensure unique devices by remoteId
-    final Map<String, DiscoveredDevice> uniqueDevices = {};
-
-    for (final result in FlutterBluePlus.lastScanResults) {
-      final remoteId = result.device.remoteId.toString();
-
-      // Check advertisement data for the target service UUID (no connection needed)
-      final hasTarget = result.advertisementData.serviceUuids.any(
-        (uuid) =>
-            uuid.toString().toLowerCase() ==
-            BLEAdvertiser.serviceUuid.toLowerCase(),
-      );
-
-      uniqueDevices[remoteId] = (
-        remoteId: remoteId,
-        result: result,
-        services: [], // We don't connect to keep discovery fast
-        hasTargetService: hasTarget,
-      );
-    }
-
-    _log.info("Found ${uniqueDevices.length} unique devices");
-
-    return uniqueDevices.values.toList();
-  }
-
-  Future<void> stopDiscovering() async {
-    final scanning = FlutterBluePlus.isScanningNow;
-
-    if (!scanning) {
-      _log.warning('Not currently discovering, cannot stop discovering');
-      return;
-    }
-
-    await FlutterBluePlus.stopScan();
-
-    _log.info("Scan stopped manually");
-
-    await Future.delayed(const Duration(milliseconds: 500));
   }
 }
-*/
