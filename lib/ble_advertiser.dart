@@ -193,6 +193,8 @@ class BLEAdvertiser {
           profileHash: _currentFullHash ?? Uint8List(6),
         );
 
+    _log.info('Starting advertising: Name: $localName, StableId: $stableId, MFD: ${manufacturerData.length}b, ScanRespMFD: ${scanResponseData.length}b');
+
     await BlePeripheral.startAdvertising(
       services: [serviceUuid],
       localName: localName.length > maxNameLength

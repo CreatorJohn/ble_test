@@ -116,12 +116,24 @@ class BLEDiscoverer {
   }) async {
     _log.info("Scanned ${results.length} results");
     for (final r in results) {
-      final meshDataRaw =
-          r.advertisementData.manufacturerData[MeshConstants.manufacturerId] ??
-          r.advertisementData.manufacturerData[0xFFFF];
+      final mfd = r.advertisementData.manufacturerData;
+      _log.info('Processing ${r.device.remoteId}: MFD Keys: ${mfd.keys.toList()}');
 
-      if (meshDataRaw == null || meshDataRaw.length < 5) continue;
+      final meshDataRaw =
+          mfd[MeshConstants.manufacturerId] ?? mfd[0xFFFF];
+
+      if (meshDataRaw == null) {
+        _log.info('  Skipping ${r.device.remoteId}: No mesh manufacturer data found for ID ${MeshConstants.manufacturerId.toRadixString(16)} or 0xFFFF');
+        continue;
+      }
+      
+      if (meshDataRaw.length < 5) {
+        _log.info('  Skipping ${r.device.remoteId}: Mesh data too short (${meshDataRaw.length} bytes)');
+        continue;
+      }
+
       final meshData = Uint8List.fromList(meshDataRaw);
+      _log.info('  Found mesh data: ${meshData.length} bytes');
       int? stableId, versionTag;
       String? profileHash;
       double? lat, lon;
