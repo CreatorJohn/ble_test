@@ -1,23 +1,14 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:ble_test/ble_advertiser.dart';
 import 'package:ble_test/ble_discoverer.dart';
-import 'package:ble_test/chunked_transfer_manager.dart';
-import 'package:ble_test/data/found_device.dart';
 import 'package:ble_test/data/isar_service.dart';
-import 'package:ble_test/data/mesh_packet.dart';
 import 'package:ble_test/message_handler.dart';
 import 'package:ble_test/profile_manager.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:isar_community/isar.dart';
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -81,26 +72,12 @@ void onStart(ServiceInstance service) async {
     }).catchError((_) {
       log.severe("Failed to initialized BLEAdvertiser!");
     });
-  } else {
-    log.info("BLEAdvertiser already initialized!");
   }
 
-  final bleSupported = await BlePeripheral.isSupported();
-
-  log.info("Is BLE advertising supported? ${bleSupported ? "Yes" : "No"}");
-
-  service.invoke("advertisingSupported", {"value": bleSupported});
-
-  runZardedGuarded(
+  runZonedGuarded(
     () async => await _startServiceLogic(service, advertiser),
     (error, stack) => log.severe('Top-level error: $error', error, stack),
   );
-}
-
-// Fix typo from previous version
-void runZardedGuarded(Future<void> Function() body,
-    void Function(Object error, StackTrace stack) onError) {
-  runZonedGuarded(body, onError);
 }
 
 Future<void> _startServiceLogic(
@@ -112,16 +89,11 @@ Future<void> _startServiceLogic(
   String currentName = prefs.getString('advertising_name_v2') ?? "BLE Node";
   bool advertisingOn = prefs.getBool('advertising_on') ?? false;
   double currentLat = 0.0, currentLon = 0.0;
-  bool isOnline = false,
-      isAdUpdating = false,
-      needsTrailingUpdate = false,
-      isScanOperationInProgress = false;
+  bool isOnline = false, isAdUpdating = false, needsTrailingUpdate = false;
 
   Future<void> updateAd() async {
     if (!advertisingOn || !BLEAdvertiser.initialized) return;
-    if (isAdUpdating ||
-        isScanOperationInProgress ||
-        BLEAdvertiser.hasInboundConnections) {
+    if (isAdUpdating || BLEAdvertiser.hasInboundConnections) {
       needsTrailingUpdate = true;
       return;
     }
@@ -154,16 +126,11 @@ Future<void> _startServiceLogic(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
     ),
-  ).listen(
-    (p) {
-      currentLat = p.latitude;
-      currentLon = p.longitude;
-      if (advertisingOn) updateAd();
-    },
-    onError: (e) {
-      log.warning('Loc error: $e');
-    },
-  );
+  ).listen((p) {
+    currentLat = p.latitude;
+    currentLon = p.longitude;
+    if (advertisingOn) updateAd();
+  });
 
   final isar = IsarService();
   await isar.initialize();
@@ -171,152 +138,18 @@ Future<void> _startServiceLogic(
   MessageHandler.initialize();
 
   final myStableId = await ProfileManager.getStableDeviceId();
-  final Map<int, BluetoothDevice> syncQueue = {};
-  final Map<int, DateTime> lastSyncAttempt = {};
 
-  FlutterBluePlus.scanResults.listen((results) async {
-    if (!isar.isOpen) return;
-    if (BLEAdvertiser.hasInboundConnections && FlutterBluePlus.isScanningNow) {
-      log.info('Inbound active, pausing scan');
-      FlutterBluePlus.stopScan();
-      return;
-    }
+  // Start Discovery Engine
+  BLEDiscoverer().start(service, isar, myStableId);
 
-    await BLEDiscoverer.processScanResults(
-      results: results,
-      isar: isar,
-      myStableId: myStableId,
-      syncQueue: syncQueue,
-      lastSyncAttempt: lastSyncAttempt,
-    );
-  });
-
-  final scanDuration = Duration(seconds: MessageHandler.scanDurationSeconds);
-  Duration currentWaitDuration =
-      Duration(seconds: MessageHandler.waitDurationSeconds);
-  DateTime? lastScanStartTime;
-
-  Future<void> startSafeScan() async {
-    if (isScanOperationInProgress) return;
-
-    if (BLEAdvertiser.hasInboundConnections) {
-      log.info('Scanning with active inbound connections...');
-    }
-
-    isScanOperationInProgress = true;
-    try {
-      if (!await FlutterBluePlus.isSupported) return;
-
-      if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
-        log.info('Bluetooth is OFF, skipping scan...');
-        return;
-      }
-
-      final needsSync =
-          await isar.db.foundDevices.filter().publicKeyIsNull().findAll();
-      for (final dev in needsSync) {
-        if (!syncQueue.containsKey(dev.stableId)) {
-          syncQueue[dev.stableId] = BluetoothDevice.fromId(dev.remoteId);
-        }
-      }
-
-      if (FlutterBluePlus.isScanningNow) {
-        await FlutterBluePlus.stopScan();
-        await Future.delayed(const Duration(seconds: 1));
-      }
-
-      lastScanStartTime = DateTime.now();
-      await FlutterBluePlus.startScan(
-        timeout: scanDuration,
-        withServices: [Guid(BLEAdvertiser.serviceUuid)],
-        androidScanMode: AndroidScanMode.balanced,
-        oneByOne: true,
-      );
-      await FlutterBluePlus.isScanning.where((s) => s == false).first;
-      await Future.delayed(const Duration(seconds: 3));
-
-      if (syncQueue.isNotEmpty) {
-        for (final entry in syncQueue.entries) {
-          await Future.delayed(
-            Duration(milliseconds: 1000 + Random().nextInt(2000)),
-          );
-          lastSyncAttempt[entry.key] = DateTime.now();
-          service.invoke('updateProgress', {
-            'value': 1.0,
-            'status': 'Fetching Metadata...',
-            'syncingStableId': entry.key,
-          });
-          await _fetchFullMetadata(entry.value, isar, entry.key, log);
-        }
-        syncQueue.clear();
-      }
-    } finally {
-      isScanOperationInProgress = false;
-      if (needsTrailingUpdate && advertisingOn) updateAd();
-    }
-  }
-
-  Timer? discoveryTimer;
-  DateTime? lastCycleFinishedTime;
-  void runDiscoveryCycle() async {
-    lastCycleFinishedTime = null;
-    final cycleStart = DateTime.now();
-    await startSafeScan();
-    lastCycleFinishedTime = DateTime.now();
-
-    final totalDuration = lastCycleFinishedTime!.difference(cycleStart);
-    if (totalDuration.inSeconds >= 60) {
-      currentWaitDuration = const Duration(seconds: 10);
-      log.info(
-          'Sync took long (${totalDuration.inSeconds}s), shortening next wait to 10s');
-    } else {
-      currentWaitDuration = const Duration(seconds: 50);
-    }
-
-    discoveryTimer = Timer(currentWaitDuration, runDiscoveryCycle);
-  }
-
-  Timer.periodic(const Duration(milliseconds: 500), (t) {
-    final now = DateTime.now();
-
-    if (FlutterBluePlus.isScanningNow) {
-      if (lastScanStartTime == null) return;
-      final elapsed = now.difference(lastScanStartTime!);
-      service.invoke('updateProgress', {
-        'value': (elapsed.inMilliseconds / scanDuration.inMilliseconds).clamp(
-          0.0,
-          1.0,
-        ),
-      });
-    } else if (isScanOperationInProgress) {
-      service.invoke('updateProgress', {
-        'value': 1.0,
-        'status': 'Fetching Metadata...',
-      });
-    } else {
-      if (lastCycleFinishedTime == null) return;
-      final waitElapsed = now.difference(lastCycleFinishedTime!);
-      final rem =
-          currentWaitDuration.inMilliseconds - waitElapsed.inMilliseconds;
-      service.invoke('updateProgress', {
-        'value': (rem / currentWaitDuration.inMilliseconds).clamp(0.0, 1.0),
-        'remainingSeconds': (rem / 1000).ceil().clamp(0, 60),
-      });
-    }
-  });
-
-  Timer.periodic(
-    const Duration(minutes: 2),
-    (_) => MessageHandler.checkExpiredMessages(),
-  );
-
-  runDiscoveryCycle();
+  Timer.periodic(const Duration(minutes: 2), (_) => MessageHandler.checkExpiredMessages());
 
   service.on('stopService').listen((_) async {
-    discoveryTimer?.cancel();
+    BLEDiscoverer().stop();
     await advertiser.stopAdvertising();
     service.stopSelf();
   });
+  
   service.on('startAdvertising').listen((e) async {
     final String? name = e?['name'];
     advertisingOn = true;
@@ -326,6 +159,7 @@ Future<void> _startServiceLogic(
       updateAd();
     }
   });
+  
   service.on('setOnlineStatus').listen((e) {
     final status = e?['isOnline'];
     if (status is bool) {
@@ -333,240 +167,21 @@ Future<void> _startServiceLogic(
       if (advertisingOn) updateAd();
     }
   });
+  
   service.on("stopAdvertising").listen((_) async {
     advertisingOn = false;
     await prefs.setBool('advertising_on', false);
     await advertiser.stopAdvertising();
     service.invoke("advertisingChange", {"active": false});
   });
+  
   service.on("updateLocalProfile").listen((_) => updateAd());
+  
   service.on('sendMessage').listen((e) async {
     final targetId = e?['targetId'];
     final content = e?['content'];
     if (targetId is int && content is String) {
-      await MessageHandler.sendMessage(
-        targetStableId: targetId,
-        content: content,
-      );
+      await MessageHandler.sendMessage(targetStableId: targetId, content: content);
     }
   });
-}
-
-Future<void> _fetchFullMetadata(
-  BluetoothDevice device,
-  IsarService isar,
-  int stableId,
-  Logger log,
-) async {
-  final remoteId = device.remoteId.toString();
-  bool establishedByUs = false;
-  BluetoothCharacteristic? picChar, messageChar;
-  StreamSubscription? messageSub;
-
-  try {
-    if (BLEAdvertiser.isDeviceConnected(remoteId)) {
-      log.info('Using existing connection for $stableId');
-    } else {
-      try {
-        await device.disconnect();
-        await Future.delayed(const Duration(seconds: 1));
-      } catch (_) {}
-      int attempts = 0;
-      while (attempts < 3 && !establishedByUs) {
-        attempts++;
-        try {
-          await device.connect(
-            autoConnect: false,
-            license: License.free,
-            timeout: const Duration(seconds: 30),
-          );
-          establishedByUs = true;
-          log.info('Connected to $stableId as Central');
-        } catch (e) {
-          if (e.toString().contains('already_connected')) {
-            establishedByUs = true;
-          } else if (e.toString().contains('257')) {
-            await Future.delayed(const Duration(seconds: 5));
-          } else {
-            await Future.delayed(const Duration(seconds: 2));
-          }
-          if (attempts >= 3 && !establishedByUs) rethrow;
-        }
-      }
-    }
-
-    await Future.delayed(const Duration(milliseconds: 1000));
-    if (Platform.isAndroid) {
-      try {
-        await device.requestMtu(517);
-        await device.mtu.first
-            .timeout(const Duration(seconds: 3), onTimeout: () => 23);
-      } catch (_) {}
-    }
-    final services =
-        await device.discoverServices().timeout(const Duration(seconds: 20));
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Find characteristics
-    for (final s in services) {
-      if (s.uuid.toString().toLowerCase() ==
-          BLEAdvertiser.serviceUuid.toLowerCase()) {
-        for (final c in s.characteristics) {
-          final id = c.uuid.toString().toLowerCase();
-          if (id == BLEAdvertiser.profilePicCharUuid.toLowerCase()) {
-            picChar = c;
-          } else if (id == BLEAdvertiser.messageCharUuid.toLowerCase()) {
-            messageChar = c;
-          }
-        }
-      }
-    }
-
-    final dev =
-        await isar.db.foundDevices.where().stableIdEqualTo(stableId).findFirst();
-
-    // Zero-Read Optimization: Only pull Profile Picture via GATT
-    // All other data (Name, Location, Hash, PubKey) are in Advertising or Identity push.
-    bool missing = dev?.profilePicture == null;
-    bool shouldPullPic =
-        picChar != null && (missing || (dev?.lastPictureSync == null));
-
-    if (shouldPullPic) {
-      try {
-        await picChar.setNotifyValue(true).timeout(const Duration(seconds: 5));
-        final h = await picChar.read().timeout(const Duration(seconds: 10));
-        if (h.length >= 5 && h[0] == 0xAA) {
-          final bd = ByteData.view(Uint8List.fromList(h).buffer);
-          final expected = bd.getUint16(1, Endian.big);
-          final buffer = <int>[];
-          final comp = Completer<void>();
-          final sub = picChar.onValueReceived.listen((v) {
-            buffer.addAll(v);
-            if (buffer.length >= expected) {
-              if (!comp.isCompleted) comp.complete();
-            }
-          });
-          try {
-            await comp.future.timeout(const Duration(seconds: 30));
-            if (buffer.length >= expected && dev != null) {
-              dev.profilePicture = Uint8List.fromList(
-                buffer.sublist(0, expected),
-              );
-              dev.lastPictureSync = DateTime.now();
-              await isar.putFoundDevice(dev);
-              log.info('Successfully pulled profile picture via GATT');
-            }
-          } finally {
-            await sub.cancel();
-            await picChar
-                .setNotifyValue(false)
-                .timeout(const Duration(seconds: 5))
-                .catchError((_) => false);
-          }
-        }
-      } catch (e) {
-        log.warning('Pic pull fail: $e');
-      }
-    }
-
-    // --- START BIDIRECTIONAL SYNC ---
-    if (messageChar != null) {
-      try {
-        await messageChar
-            .setNotifyValue(true)
-            .timeout(const Duration(seconds: 5));
-
-        final syncDoneCompleter = MessageHandler.createSyncCompleter(stableId);
-
-        messageSub = messageChar.onValueReceived.listen((v) {
-          if (v.isNotEmpty) {
-            if (v[0] == MeshPacket.typeRequestProfilePic) {
-              log.info('Peer $stableId requested our profile picture');
-              MessageHandler.streamOurProfilePic(
-                  remoteId, stableId, messageChar);
-            } else {
-              MessageHandler.handleIncomingMessage(
-                senderStableId: stableId,
-                data: v,
-              );
-            }
-          }
-        });
-
-        // Send our identity (Step 3)
-        final myId = await ProfileManager.getStableDeviceId();
-        final myHash = await ProfileManager.getProfileHash();
-        final myPubKey =
-            (await (await ProfileManager.getKeyPair()).extractPublicKey())
-                .bytes;
-        final myName = (await SharedPreferences.getInstance())
-                .getString('advertising_name_v2') ??
-            "BLE Node";
-
-        log.info('Sending our identity to $stableId...');
-        final idPacket = IdentityPacket(
-          stableId: myId,
-          profileHash: myHash,
-          publicKey: Uint8List.fromList(myPubKey),
-          name: myName,
-        );
-
-        final chunks = ChunkedTransferManager.generateChunks(
-          idPacket.toBytes(),
-          Random().nextInt(256),
-        );
-        for (final c in chunks) {
-          await messageChar.write(c, withoutResponse: false);
-        }
-
-        // Push our outbound queue (Step 4)
-        await MessageHandler.pushQueuedDataToPeer(
-          stableId,
-          useNotifications: false,
-          centralWriteChar: messageChar,
-        );
-
-        // Wait for Peer to finish its work (Step 7)
-        log.info('Waiting for peer $stableId to signal SyncDone...');
-        await syncDoneCompleter.future.timeout(const Duration(seconds: 30));
-        log.info('Peer $stableId signaled SyncDone.');
-      } catch (e) {
-        log.warning('Bidirectional sync failed or timed out for $stableId: $e');
-      } finally {
-        MessageHandler.removeSyncCompleter(stableId);
-      }
-    }
-  } catch (e) {
-    log.warning('Sync fail for $stableId: $e');
-  } finally {
-    if (messageSub != null) await messageSub.cancel();
-    if (messageChar != null) {
-      await messageChar
-          .setNotifyValue(false)
-          .timeout(const Duration(seconds: 5))
-          .catchError((_) => false);
-    }
-    if (establishedByUs) {
-      try {
-        log.info('Disconnecting from $stableId...');
-        await device.disconnect().timeout(const Duration(seconds: 10));
-        log.info('Disconnected from $stableId.');
-      } catch (e) {
-        log.warning('Disconnect failed/timed out for $stableId: $e');
-      }
-    }
-  }
-}
-
-Future<Uint8List> robustRead(BluetoothCharacteristic char) async {
-  for (int i = 0; i < 3; i++) {
-    try {
-      return Uint8List.fromList(
-        await char.read().timeout(const Duration(seconds: 5)),
-      );
-    } catch (_) {
-      await Future.delayed(const Duration(seconds: 1));
-    }
-  }
-  return Uint8List.fromList([]);
 }
